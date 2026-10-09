@@ -113,4 +113,12 @@ module tb ();
 	    .RESETNeg (psram_reset_n[1])
     );
 
+    initial
+    begin
+        // Waveforms
+        $dumpfile("wave.vcd");
+        $dumpvars(0);
+//      $finish;
+    end
+
 endmodule
