@@ -214,8 +214,8 @@ module PsramController #(
     ODDR oddr_ck_n (
         .Q0  (ck_n_tbuf),
         .Q1  (),
-        .D0  (1'b0),
-        .D1  (ck_e_p),
+        .D0  (~ck_e_p),
+        .D1  (1'b1),
         .TX  (1'b1),
         .CLK (clk_p)
     );
