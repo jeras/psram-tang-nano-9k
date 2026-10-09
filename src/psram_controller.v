@@ -28,10 +28,11 @@ module PsramController #(
     output            busy,        // 1 while an operation is in progress
     // HyperRAM physical interface. Gowin interface is for 2 dies.
     // We currently only use the first die (4MB).
-    output  [1:0] O_psram_ck,
+    output  [1:0]  O_psram_ck,
+    output  [1:0]  O_psram_ck_n,
+    output  [1:0]  O_psram_cs_n,
     inout   [1:0] IO_psram_rwds,
-    inout  [15:0] IO_psram_dq,
-    output  [1:0] O_psram_cs_n
+    inout  [15:0] IO_psram_dq
 );
 
     reg [2:0] state;
@@ -152,11 +153,10 @@ module PsramController #(
         end
     end
 
+///////////////////////////////////////////////////////////////////////////////
+// Generate cfg_now pulse after 150us initialization delay
+///////////////////////////////////////////////////////////////////////////////
 
-    // 150us initialization delay
-    //
-    // Generate cfg_now pulse after 150us delay
-    //
     localparam INIT_TIME = FREQ / 1000 * 160 / 1000;
     reg  [$clog2(INIT_TIME+1):0]   rst_cnt;
     reg rst_done, rst_done_p1;
@@ -176,10 +176,9 @@ module PsramController #(
         end
     end
 
-    // Tristate DDR output
-    wire rwds_oen_tbuf;
-    wire dq_out_tbuf[7:0];
-    wire dq_oen_tbuf[7:0];
+///////////////////////////////////////////////////////////////////////////////
+// HyperRAM `cs_n` output
+///////////////////////////////////////////////////////////////////////////////
 
     ODDR oddr_cs_n (
         .Q0  (cs_n_tbuf),
@@ -194,6 +193,49 @@ module PsramController #(
         .O   (O_psram_cs_n[0]),
         .I   (cs_n_tbuf)
     );
+
+///////////////////////////////////////////////////////////////////////////////
+// HyperRAM `ck`/`ck_n` output
+///////////////////////////////////////////////////////////////////////////////
+
+    wire ck_tbuf;
+    wire ck_n_tbuf;
+
+    // Note: ck uses phase-shifted clock clk_p
+    ODDR oddr_ck (
+        .Q0  (ck_tbuf),
+        .Q1  (),
+        .D0  (ck_e_p),
+        .D1  (1'b0),
+        .TX  (1'b1),
+        .CLK (clk_p)
+    );
+
+    ODDR oddr_ck_n (
+        .Q0  (ck_n_tbuf),
+        .Q1  (),
+        .D0  (1'b0),
+        .D1  (ck_e_p),
+        .TX  (1'b1),
+        .CLK (clk_p)
+    );
+
+    OBUF obuf_ck (
+        .O   (O_psram_ck[0]),
+        .I   (ck_tbuf)
+    );
+
+    OBUF obuf_ck_p (
+        .O   (O_psram_ck_n[0]),
+        .I   (ck_n_tbuf)
+    );
+
+///////////////////////////////////////////////////////////////////////////////
+// HyperRAM `rwds` output
+///////////////////////////////////////////////////////////////////////////////
+
+    wire rwds_tbuf;
+    wire rwds_oen_tbuf;
 
     ODDR oddr_rwds(
         .Q0  (rwds_tbuf),
@@ -210,40 +252,36 @@ module PsramController #(
         .OEN (rwds_oen_tbuf)
     );
 
-    genvar i1;
-    generate for (i1=0; i1<=7; i1=i1+1) begin: data_o
+///////////////////////////////////////////////////////////////////////////////
+// HyperRAM `dq` output
+///////////////////////////////////////////////////////////////////////////////
+
+    wire [7:0] dq_out_tbuf;
+    wire [7:0] dq_oen_tbuf;
+
+    genvar i;
+    generate for (i=0; i<=7; i++) begin: data_o
 
         ODDR oddr_dq (
-            .Q0  (dq_out_tbuf[i1]),
-            .Q1  (dq_oen_tbuf[i1]),
-            .D0  (dq_out_ris[i1]),
-            .D1  (dq_out_fal[i1]),
+            .Q0  (dq_out_tbuf[i]),
+            .Q1  (dq_oen_tbuf[i]),
+            .D0  (dq_out_ris[i]),
+            .D1  (dq_out_fal[i]),
             .TX  (dq_oen),
             .CLK (clk)
         );
 
         TBUF tbuf_dq (
-            .O   (IO_psram_dq[i1]),
-            .I   (dq_out_tbuf[i1]),
-            .OEN (dq_oen_tbuf[i1])
+            .O   (IO_psram_dq[i]),
+            .I   (dq_out_tbuf[i]),
+            .OEN (dq_oen_tbuf[i])
         );
 
     end endgenerate
 
-    // Note: ck uses phase-shifted clock clk_p
-    ODDR oddr_ck (
-        .Q0  (ck_tbuf),
-        .Q1  (),
-        .D0  (ck_e_p),
-        .D1  (1'b0),
-        .TX  (1'b1),
-        .CLK (clk_p)
-    );
-
-    OBUF obuf_ck (
-        .O   (O_psram_ck[0]),
-        .I   (ck_tbuf)
-    );
+///////////////////////////////////////////////////////////////////////////////
+// HyperRAM `dq` input
+///////////////////////////////////////////////////////////////////////////////
 
     // Tristate DDR input
     IDDR iddr_rwds (
@@ -253,12 +291,11 @@ module PsramController #(
         .CLK (clk)
     );
 
-    genvar i2;
-    generate for (i2=0; i2<=7; i2=i2+1) begin: data_i
+    generate for (i=0; i<=7; i++) begin: data_i
         IDDR iddr_dq (
-            .Q0  (dq_in_ris[i2]),
-            .Q1  (dq_in_fal[i2]),
-            .D   (IO_psram_dq[i2]),
+            .Q0  (dq_in_ris[i]),
+            .Q1  (dq_in_fal[i]),
+            .D   (IO_psram_dq[i]),
             .CLK (clk)
         );
     end endgenerate

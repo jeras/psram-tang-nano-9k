@@ -26,12 +26,12 @@ module memory_test (
     //localparam LATENCY = 4;
 
     // Remove UART print module for timing closure (check LED5 for error)
-    //`define NO_UART_PRINT
+    `define NO_UART_PRINT
 
     // For GAO debug
     //localparam [21:0] BYTES = 2;
-    //localparam NO_PAUSE = 1;
-    localparam NO_PAUSE = 0;                // Pause between states to allow UART printing
+    localparam NO_PAUSE = 1;
+    //localparam NO_PAUSE = 0;                // Pause between states to allow UART printing
 
 ///////////////////////////////////////////////////////////////////////////////
 // clock and reset
@@ -86,6 +86,7 @@ module memory_test (
         .busy         (busy),
         // HyperRAM
         .O_psram_ck   (O_psram_ck),
+        .O_psram_ck_n (O_psram_ck_n),
         .IO_psram_rwds(IO_psram_rwds),
         .IO_psram_dq  (IO_psram_dq),
         .O_psram_cs_n (O_psram_cs_n)
@@ -161,7 +162,7 @@ module memory_test (
         byte_write <= 1;
         ticks <= tick && (state == TEST_INIT || state == PAUSE) ? ticks + 1 : ticks;
 
-        if (~sys_resetn || state == TEST_ZERO) begin
+        if (state == TEST_ZERO) begin
             cycle <= 0;
             ticks <= 0;
             new_state <= TEST_INIT;
@@ -245,7 +246,7 @@ module memory_test (
     reg [23:0] tick_counter;        // max 16M
 
     always @(posedge clk)
-    if (~sys_resetn) begin
+    if (~rstn) begin
         tick_counter <= FREQ/10;
         tick <= 1'b0;
     end else begin
