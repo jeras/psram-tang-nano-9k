@@ -1,30 +1,16 @@
-# compile
+#!/usr/bin/env sh
 
 qrun -suppress 14408 -suppress 16154 -voptargs=+acc \
 -top tb -sv \
 -defineall S27KS0642DPBHI \
 -gui \
+/opt/Gowin/Gowin_V1.9.12.04_linux/IDE/simlib/gw1a/prim_sim_a.v \
+../src/gowin_rpll/gowin_rpll.v \
 ../src/psram_controller.v \
 ../src/uart_tx.v \
 ../src/psram_test_top.v \
 ../tb/s27kl0642.v \
-../tb/tb.v
+../tb/tb.v \
+-do cmd.do
 
 #../impl/qwsynthesis/psram_controller.vg
-
-# GUI
-
-add wave /tb/psram_ck
-add wave /tb/psram_ck_n
-add wave /tb/psram_cs_n
-add wave /tb/psram_rwds
-add wave /tb/psram_dq
-add wave /tb/psram_reset_n
-
-view wave
-view structure
-view signals
-
-# run
-
-#run 20000us

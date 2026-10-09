@@ -101,7 +101,7 @@ end
 
 reg uart_en;
 wire uart_bz;
-wire uart_txp;
+//wire uart_txp;
 uart_tx_V2 tx(print_clk, print_seq[seq_head], uart_en, uart_bz, uart_txp);
 
 //always block to send the data via UART

@@ -6,15 +6,15 @@ module tb ();
     logic sys_resetn;
     logic button;   // 0 when pressed
 
-    logic [5:0] led;
-    logic uart_txp;
+    wire [5:0] led;
+    wire uart_txp;
 
-    logic  [1:0] psram_ck;
-    logic  [1:0] psram_ck_n;
-    logic  [1:0] psram_rwds;
-    logic [15:0] psram_dq;
-    logic  [1:0] psram_reset_n;
-    logic  [1:0] psram_cs_n;
+    wire  [1:0] psram_ck;
+    wire  [1:0] psram_ck_n;
+    wire  [1:0] psram_rwds;
+    wire [15:0] psram_dq;
+    wire  [1:0] psram_reset_n;
+    wire  [1:0] psram_cs_n;
 
     // system clock (27Mhz external clock oscillator on Tang Nano 9k)
     initial    sys_clk = 0;
@@ -27,7 +27,7 @@ module tb ();
         sys_resetn = 0;
         button = 1;
         // reset sequence (release)
-        repeat (16) @(posedge sys_clk);
+        repeat (3000) @(posedge sys_clk);
         sys_resetn = 1;
         // delay before button press
         repeat (16) @(posedge sys_clk);
@@ -37,7 +37,11 @@ module tb ();
         button = 1;
     end
 
-    module memory_test (
+    // Gowin global signal
+    GSR GSR(1'b1);
+
+    // design under test instance
+    memory_test dut (
         .sys_clk         (sys_clk),
         .sys_resetn      (sys_resetn),
     
