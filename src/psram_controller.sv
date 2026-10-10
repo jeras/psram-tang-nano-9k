@@ -8,31 +8,31 @@
 //   Read latency is 12 cycles (1x) or 15 cycles(2x). In my test, 2x latency happens about
 //   0.05% of time.
 
-module PsramController #(
-    parameter FREQ=81_000_000,// Actual clk frequency, to time 150us initialization delay
-    parameter LATENCY=3       // tACC (Initial Latency) in W955D8MBYA datasheet:
-                              // 3 (max 83Mhz), 4 (max 104Mhz), 5 (max 133Mhz) or 6 (max 166Mhz)
-) (
+module psram_controller #(
+    parameter FREQ=81_000_000,       // Actual clk frequency, to time 150us initialization delay
+    parameter LATENCY=3              // tACC (Initial Latency) in W955D8MBYA datasheet:
+                                     // 3 (max 83Mhz), 4 (max 104Mhz), 5 (max 133Mhz) or 6 (max 166Mhz)
+)(
     // system signals
-    input             clk,
-    input             clk_p,       // phase-shifted clock for driving O_psram_ck
-    input             resetn,
+    input  logic          clk,
+    input  logic          clk_p,      // phase-shifted clock for driving O_psram_ck
+    input  logic          rstn,
     // system bus
-    input             read,        // Set to 1 to read from RAM
-    input             write,       // Set to 1 to write to RAM
-    input      [21:0] addr,        // Byte address to read / write
-    input      [15:0] din,         // Data word to write
-    input             byte_write,  // When writing, only write one byte instead of the whole word.
-                                   // addr[0]==1 means we write the upper half of din. lower half otherwise.
-    output reg [15:0] dout,        // Last read data. Read is always word-based.
-    output            busy,        // 1 while an operation is in progress
-    // HyperRAM physical interface. Gowin interface is for 2 dies.
-    // We currently only use the first die (4MB).
-    output  [1:0]  O_psram_ck,
-    output  [1:0]  O_psram_ck_n,
-    output  [1:0]  O_psram_cs_n,
-    inout   [1:0] IO_psram_rwds,
-    inout  [15:0] IO_psram_dq
+    input  logic          bus_valid,  // handshake valid
+    input  logic          bus_write,  // 0: read, 1: write
+    input  logic [22-1:0] bus_addr ,  // address (bit [0] is ignored)
+    input  logic  [2-1:0] bus_bytee,  // byte enable
+    input  logic [16-1:0] bus_dataw,  // write data
+    output logic [16-1:0] bus_datar,  // read data (byte enable is ignored)
+    output logic          bus_busy ,  // 1 while an operation is in progress
+//  output logic          bus_ready,  // handshake ready
+    // HyperRAM physical interface
+    output logic        O_psram_reset_n,
+    output logic        O_psram_ck,
+    output logic        O_psram_ck_n,
+    output logic        O_psram_cs_n,
+    inout  logic       IO_psram_rwds,
+    inout  logic [7:0] IO_psram_dq
 );
 
     reg [2:0] state;
@@ -44,7 +44,7 @@ module PsramController #(
 
     reg cfg_now, dq_oen, ram_cs_n, ck_e, ck_e_p;
     reg wait_for_rd_data;
-    reg [15:0] w_din;
+    reg [15:0] w_data_w;
     reg [23:0] cycles_sr;       // shift register counting cycles
     reg [63:0] dq_sr;           // shifts left 8-bit every cycle
 
@@ -57,7 +57,7 @@ module PsramController #(
     wire rwds_in_ris, rwds_in_fal;
     reg additional_latency;
 
-    assign busy = (state != IDLE_ST);
+    assign bus_busy = (state != IDLE_ST);
 
     localparam [3:0] CR_LATENCY = LATENCY == 3 ? 4'b1110 :
                                   LATENCY == 4 ? 4'b1111 :
@@ -66,7 +66,7 @@ module PsramController #(
 
     // Main FSM for HyperRAM read/write
     always @(posedge clk)
-    if (~resetn) begin
+    if (~rstn) begin
         state    <= INIT_ST;
         ram_cs_n <= 1;
         ck_e     <= 0;
@@ -74,7 +74,7 @@ module PsramController #(
         dq_oen   <= 1'b1;
         wait_for_rd_data <= 1'b0;
         cycles_sr <= 24'b1;
-        w_din <= 0;
+        w_data_w <= 0;
         rwds_out_ris <= 1'b0;
         rwds_out_fal <= 1'b0;
         rwds_oen <= 1'b1;
@@ -107,17 +107,17 @@ module PsramController #(
             rwds_oen <= 1;
             ck_e <= 0;
             ram_cs_n <= 1;
-            if (read || write) begin
+            if (bus_valid) begin
                 // start read/write operation
-                dq_sr <= {~write, 13'b010_0000_0000_00, addr[21:4], 13'b0, addr[3:1], 16'b0000_0100_1101_0100};
+                dq_sr <= {~bus_write, 13'b010_0000_0000_00, bus_addr[21:4], 13'b0, bus_addr[3:1], 16'b0000_0100_1101_0100};
                         //      14-bit                     18-bit   13-bit   3-bit             total 48-bit CA
                 ram_cs_n <= 0;
                 ck_e <= 1;
                 dq_oen <= 0;
                 wait_for_rd_data <= 0;
-                w_din <= din;
+                w_data_w <= bus_dataw;
                 cycles_sr <= 32'b10;    // start from cycle 1
-                state <= write ? WRITE_ST : READ_ST;
+                state <= bus_write ? WRITE_ST : READ_ST;
             end
         end
 
@@ -129,7 +129,7 @@ module PsramController #(
             if (cycles_sr[9])
                 wait_for_rd_data <= 1;
             if (wait_for_rd_data && (rwds_in_ris ^ rwds_in_fal)) begin     // sample rwds falling edge to get a word / \_
-                dout <= {dq_in_ris, dq_in_fal};
+                bus_datar <= {dq_in_ris, dq_in_fal};
                 ram_cs_n <= 1;
                 ck_e <= 0;
                 state <= IDLE_ST;
@@ -145,9 +145,9 @@ module PsramController #(
                 || cycles_sr[2+LATENCY*2])
             begin
                 rwds_oen <= 0;
-                rwds_out_ris <= byte_write ? ~addr[0] : 1'b0;       // RWDS is data mask (1 means not writing)
-                rwds_out_fal <= byte_write ? addr[0] : 1'b0;
-                dq_sr[63:48] <= w_din;
+                rwds_out_ris <= ~bus_bytee[0];
+                rwds_out_fal <= ~bus_bytee[1];
+                dq_sr[63:48] <= w_data_w;
                 state <= IDLE_ST;
             end
         end
@@ -162,7 +162,7 @@ module PsramController #(
     reg rst_done, rst_done_p1;
 
     always @(posedge clk) begin
-    if (~resetn) begin
+    if (~rstn) begin
         rst_cnt  <= 15'd0;
         rst_done <= 0;
         rst_done_p1 <= 0;
@@ -177,21 +177,12 @@ module PsramController #(
     end
 
 ///////////////////////////////////////////////////////////////////////////////
-// HyperRAM `cs_n` output
+// HyperRAM `ck`/`ck_n` output
 ///////////////////////////////////////////////////////////////////////////////
 
-    ODDR oddr_cs_n (
-        .Q0  (cs_n_tbuf),
-        .Q1  (),
-        .D0  (ram_cs_n),
-        .D1  (ram_cs_n),
-        .TX  (1'b1),
-        .CLK (clk)
-    );
-
-    OBUF obuf_cs_n (
-        .O   (O_psram_cs_n[0]),
-        .I   (cs_n_tbuf)
+    OBUF obuf_reset_n (
+        .O   (O_psram_reset_n),
+        .I   (rstn)
     );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -221,13 +212,31 @@ module PsramController #(
     );
 
     OBUF obuf_ck (
-        .O   (O_psram_ck[0]),
+        .O   (O_psram_ck),
         .I   (ck_tbuf)
     );
 
     OBUF obuf_ck_p (
-        .O   (O_psram_ck_n[0]),
+        .O   (O_psram_ck_n),
         .I   (ck_n_tbuf)
+    );
+
+///////////////////////////////////////////////////////////////////////////////
+// HyperRAM `cs_n` output
+///////////////////////////////////////////////////////////////////////////////
+
+    ODDR oddr_cs_n (
+        .Q0  (cs_n_tbuf),
+        .Q1  (),
+        .D0  (ram_cs_n),
+        .D1  (ram_cs_n),
+        .TX  (1'b1),
+        .CLK (clk)
+    );
+
+    OBUF obuf_cs_n (
+        .O   (O_psram_cs_n),
+        .I   (cs_n_tbuf)
     );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -247,7 +256,7 @@ module PsramController #(
     );
 
     TBUF tbuf_rwds (
-        .O   (IO_psram_rwds[0]),
+        .O   (IO_psram_rwds),
         .I   (rwds_tbuf),
         .OEN (rwds_oen_tbuf)
     );
@@ -265,8 +274,8 @@ module PsramController #(
         ODDR oddr_dq (
             .Q0  (dq_out_tbuf[i]),
             .Q1  (dq_oen_tbuf[i]),
-            .D0  (dq_out_ris[i]),
-            .D1  (dq_out_fal[i]),
+            .D0  (dq_out_ris [i]),
+            .D1  (dq_out_fal [i]),
             .TX  (dq_oen),
             .CLK (clk)
         );
@@ -287,7 +296,7 @@ module PsramController #(
     IDDR iddr_rwds (
         .Q0  (rwds_in_ris),
         .Q1  (rwds_in_fal),
-        .D   (IO_psram_rwds[0]),
+        .D   (IO_psram_rwds),
         .CLK (clk)
     );
 

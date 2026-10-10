@@ -23,3 +23,27 @@ See also
 * [Tang 20K official examples](https://github.com/sipeed/TangPrimer-20K-example), where the UART module comes from.
 
 Feng Zhou, 2022.8
+
+
+# Notes
+
+`
+
+## `t_RWR` Read Write Recovery
+
+This is defined as the time from `CS#` rising edge (end of previous transaction)
+to the 4-th clock edge within a new transaction.
+For a 166MHz PSRAM device, this time is **36ns**.
+
+At 166MHz this would be 6 clock periods, at 83MHz just 3 clock periods.
+
+This means that at 83MHZ, `CS#` can be inactive for just 1 clock period (12ns)
+combined with the following 2 clock periods used for command-address (2*12ns)
+gives 36ns, which is enough to fulfill the requirement.
+
+| frequency  | clock periods | min. CS# inactive periods |
+|------------|---------------|---------------------------|
+| ≤  83.3MHz | 3             | 1                         |
+| ≤ 111.1MHz | 4             | 2                         |
+| ≤ 138.8MHz | 5             | 3                         |
+| ≤ 166.6MHz | 6             | 4                         |

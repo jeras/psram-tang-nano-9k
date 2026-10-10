@@ -1,19 +1,20 @@
 
 
 module memory_test (
-    input sys_clk,  // 27 Mhz, crystal clock from board
-    input sys_resetn,
-    input button,   // 0 when pressed
+    input  wire        sys_clk,  // 27 Mhz, crystal clock from board
+    input  wire        sys_resetn,
+    input  wire        button,   // 0 when pressed
 
-    output [5:0] led,
-    output uart_txp,
+    output wire  [5:0] led,
+    output wire        uart_txp,
 
-    output [1:0] O_psram_ck,       // Magic ports for PSRAM to be inferred
-    output [1:0] O_psram_ck_n,
-    inout  [1:0] IO_psram_rwds,
-    inout [15:0] IO_psram_dq,
-    output [1:0] O_psram_reset_n,
-    output [1:0] O_psram_cs_n
+    // Magic ports for PSRAM to be inferred
+    output wire  [1:0]  O_psram_reset_n,
+    output wire  [1:0]  O_psram_ck,
+    output wire  [1:0]  O_psram_ck_n,
+    output wire  [1:0]  O_psram_cs_n,
+    inout  wire  [1:0] IO_psram_rwds,
+    inout  wire [15:0] IO_psram_dq
 );
 
     // Customization of the test
@@ -62,37 +63,47 @@ module memory_test (
 // Memory Controller under test
 ///////////////////////////////////////////////////////////////////////////////
 
-    reg  read, readd, write, byte_write;
-    reg  [21:0] address;
-    reg  [15:0] din;
-    wire [15:0] dout;
-    wire  [7:0] dout_byte;
+    // system bus
+    logic          bus_valid;
+    logic          bus_write;
+    logic  [2-1:0] bus_bytee;
+    logic [22-1:0] bus_addr;
+    logic [16-1:0] bus_dataw;
+    logic [16-1:0] bus_datar;
+    logic          bus_busy;
 
-    PsramController #(
+    psram_controller #(
         .FREQ (FREQ),
         .LATENCY(LATENCY)
     ) mem_ctrl (
         // system signals
-        .clk          (clk),
-        .clk_p        (clk_p),
-        .resetn       (rstn),
+        .clk             (clk),
+        .clk_p           (clk_p),
+        .rstn            (rstn),
         // system bus
-        .read         (read),
-        .write        (write),
-        .byte_write   (byte_write),
-        .addr         (address),
-        .din          (din),
-        .dout         (dout),
-        .busy         (busy),
+        .bus_valid       (bus_valid),
+        .bus_write       (bus_write),
+        .bus_addr        (bus_addr ),
+        .bus_bytee       (bus_bytee),
+        .bus_dataw       (bus_dataw),
+        .bus_datar       (bus_datar),
+        .bus_busy        (bus_busy ),
         // HyperRAM
-        .O_psram_ck   (O_psram_ck),
-        .O_psram_ck_n (O_psram_ck_n),
-        .IO_psram_rwds(IO_psram_rwds),
-        .IO_psram_dq  (IO_psram_dq),
-        .O_psram_cs_n (O_psram_cs_n)
+        .O_psram_reset_n (O_psram_reset_n[0]),
+        .O_psram_ck      (O_psram_ck     [0]),
+        .O_psram_ck_n    (O_psram_ck_n   [0]),
+        .O_psram_cs_n    (O_psram_cs_n   [0]),
+        .IO_psram_rwds   (IO_psram_rwds  [0]),
+        .IO_psram_dq     (IO_psram_dq  [7:0])
     );
 
-    assign O_psram_reset_n = rstn;
+    // unused second PSRAM device
+    assign  O_psram_reset_n [1] = 1'b0;
+    assign  O_psram_ck      [1] = 1'bz;
+    assign  O_psram_ck_n    [1] = 1'bz;
+    assign  O_psram_cs_n    [1] = 1'bz;
+    assign IO_psram_rwds    [1] = 1'bz;
+    assign IO_psram_dq   [15:8] = 1'bz;
 
 ///////////////////////////////////////////////////////////////////////////////
 // test FSM
@@ -112,21 +123,26 @@ module memory_test (
     // pass in address to get hash value
     `define hash(a) (a[7:0] ^ a[15:8] ^ a[21:16] ^ 8'hc3)
 
-    reg [3:0] state, new_state;
-    reg [4:0] cycle = 0;        // max 16
-    reg [23:0] write_1x, write_2x, read_1x, read_2x;        // counter for 1x or 2x latencies
-    reg tick;                   // pulse once per 0.1 second
-    reg [3:0] ticks = 0;        // counter for 0.1 second delays
-    reg error;
+    // local signals
+    logic  [8-1:0] datar_byte;
+    logic          datar_parity;
 
-    assign dout_byte = address[0] ? dout[15:8] : dout[7:0];
-    assign dout_parity = dout[7] & dout[6] & dout[5] & dout[4] & dout[3] & dout[2] & dout[1] & dout[0];
-    assign led = ~{error, dout_parity, dout, state};
+    logic    [3:0] state, new_state;
+    logic    [4:0] cycle = 0;        // max 16
+    logic [24-1:0] write_1x, write_2x, read_1x, read_2x;        // counter for 1x or 2x latencies
+    logic          tick;             // pulse once per 0.1 second
+    logic    [3:0] ticks = 0;        // counter for 0.1 second delays
+    logic          error;
 
     // pipeline addr+1 to meet timing constraint
-    reg  [9-1:0] new_addr_0;
-    reg  [9-1:0] new_addr_1;
-    reg [22-1:0] new_addr;        // available after 3 cycles
+    logic  [9-1:0] new_addr_0;
+    logic  [9-1:0] new_addr_1;
+    logic [22-1:0] new_addr;        // available after 3 cycles
+
+    assign datar_byte = bus_addr[0] ? bus_datar[15:8] : bus_datar[7:0];
+    assign datar_parity = ^datar_byte;
+
+    assign led = ~{error, datar_parity, state};
 
     always @(posedge clk)
     if (~rstn) begin
@@ -135,31 +151,36 @@ module memory_test (
         new_addr   <= 22'h000000;
     end else begin
         // stage 0
-        new_addr_0 <= address[7:0] + 1;
+        new_addr_0 <= bus_addr[7:0] + 1;
         // stage 1
-        new_addr_1 <= address[15:8] + new_addr_0[8];
+        new_addr_1 <= bus_addr[15:8] + new_addr_0[8];
         // stage 2, add higher 6 bits
-        new_addr <= {address[21:16] + new_addr_1[8], new_addr_1[7:0], new_addr_0[7:0]};
+        new_addr <= {bus_addr[21:16] + new_addr_1[8], new_addr_1[7:0], new_addr_0[7:0]};
     end
 
     always @(posedge clk)
     if (~rstn) begin
-        read       <= 0;
-        write      <= 0;
-        byte_write <= 1;
+        // system bus
+        bus_valid  <= 1'b0;
+        bus_write  <= 1'b0;
+        bus_addr   <= 22'd0;
+        bus_bytee  <= 2'b00;
+        bus_dataw  <= 16'h000;
+        // local signals
         ticks      <= 0;
         cycle      <= 0;
         new_state  <= TEST_INIT;
         state      <= PAUSE;
         error      <= 0;
-        din        <= 0;
+        write_1x   <= 0;
+        write_2x   <= 0;
+        read_1x    <= 0;
         read_2x    <= 0;
-        address    <= 0;
     end else begin
         // default values
-        read <= 0;
-        write <= 0;
-        byte_write <= 1;
+        bus_valid <= 0;
+        bus_write <= 0;
+        bus_bytee <= 2'b00;
         ticks <= tick && (state == TEST_INIT || state == PAUSE) ? ticks + 1 : ticks;
 
         if (state == TEST_ZERO) begin
@@ -171,7 +192,7 @@ module memory_test (
 
         end else if (state == TEST_INIT) begin
             // wait for memory to become ready
-            if (!busy) begin
+            if (!bus_busy) begin
                 new_state <= TEST_WRITE;
                 state <= PAUSE;
             end else if (ticks == 5) begin   // 0.5 second timeout
@@ -185,20 +206,22 @@ module memory_test (
             cycle <= cycle + 1;
             if (cycle == 0) begin
                 // issue write command
-                write <= 1;
-                din <= {`hash(address), `hash(address)};
-            end else if (!write && !busy) begin
+                bus_valid <= 1'b1;
+                bus_write <= 1'b1;
+                bus_dataw <= {`hash(bus_addr), `hash(bus_addr)};
+            end else if (!bus_valid && !bus_busy) begin
                 // write finished
                 cycle <= 0;
                 if (cycle > 4+LATENCY)
                     write_2x <= write_2x + 1;
                 else
                     write_1x <= write_1x + 1;
-                if (address == BYTES - 1) begin
+                if (bus_addr == BYTES - 1) begin
                     new_state <= TEST_READ;
                     state <= PAUSE;
                 end else
-                    address <= new_addr;
+                    bus_addr <= new_addr;
+                    bus_bytee <= new_addr[0] ? 2'b10 : 2'b01;
             end else if (cycle == 5+LATENCY*2) begin
                 new_state <= TEST_FAIL_WRITE_TIMEOUT;
                 error <= 1'b1;
@@ -210,23 +233,24 @@ module memory_test (
             cycle <= cycle + 1;
             if (cycle == 0) begin
                 // issue read command
-                read <= 1;
-            end else if (!read && !busy) begin
+                bus_valid <= 1'b1;
+                bus_write <= 1'b0;
+            end else if (!bus_valid && !bus_busy) begin
                 // read finished
                 cycle <= 0;
                 if (cycle > 10+LATENCY)     // read_is on cycle 1, so cycle==13 means latency is 12
                     read_2x <= read_2x + 1;
                 else
                     read_1x <= read_1x + 1;
-                if (dout_byte != `hash(address)) begin
+                if (datar_byte != `hash(bus_addr)) begin
                     new_state <= TEST_FAIL_READ_WRONG;
                     error <= 1'b1;
                     state <= PAUSE;
-                end else if (address == BYTES - 1) begin
+                end else if (bus_addr == BYTES - 1) begin
                     new_state <= TEST_DONE;
                     state <= PAUSE;
                 end else
-                    address <= new_addr;
+                    bus_addr <= new_addr;
             end else if (cycle == 10+LATENCY*2) begin
                 new_state <= TEST_FAIL_READ_TIMEOUT;
                 error <= 1'b1;
@@ -234,7 +258,6 @@ module memory_test (
             end
 
         end else if (state == PAUSE) begin
-            address <= 0;
             // pause for 0.1 seconds for print to finish, then enter new_state
             if (ticks == 2 || NO_PAUSE) begin     // pause for 0.1 second
                 ticks <= 0;
@@ -277,7 +300,7 @@ module memory_test (
         if (state != state_p) begin
             if (state == TEST_INIT) `print("Initializing HyperRAM test...\n", STR);
             if (state == TEST_WRITE) `print("Writing...\n", STR);
-            if (state == TEST_READ) `print("Reading...\n", STR);
+            if (state == TEST_READ) `print("Readata_wg...\n", STR);
             if (state == TEST_DONE) `print("All done successfully.\n", STR);
             if (state == TEST_FAIL_INIT_TIMEOUT) `print("FAIL. Initialization timeout.\n", STR);
             if (state == TEST_FAIL_WRITE_TIMEOUT) `print("FAIL. Write time out.\n", STR);
