@@ -9,7 +9,7 @@
 //   0.05% of time.
 
 module psram_controller #(
-    parameter FREQ=81_000_000,       // Actual clk frequency, to time 150us initialization delay
+    parameter FREQUENCY=81_000_000,  // system clock frequency (integer Hz units)
     parameter LATENCY=3              // tACC (Initial Latency) in W955D8MBYA datasheet:
                                      // 3 (max 83Mhz), 4 (max 104Mhz), 5 (max 133Mhz) or 6 (max 166Mhz)
 )(
@@ -17,6 +17,8 @@ module psram_controller #(
     input  logic          clk,
     input  logic          clk_p,      // phase-shifted clock for driving O_psram_ck
     input  logic          rstn,
+    // configuration/status interface
+    output logic          init_done,  // indicates the end of initialization delay
     // system bus
     input  logic          bus_valid,  // handshake valid
     input  logic          bus_write,  // 0: read, 1: write
@@ -35,27 +37,63 @@ module psram_controller #(
     inout  logic [7:0] IO_psram_dq
 );
 
-    reg [2:0] state;
+///////////////////////////////////////////////////////////////////////////////
+// generate init_pulse after 150us initialization delay
+///////////////////////////////////////////////////////////////////////////////
+
+    // T_VCS power voltage (or reset release) to chip select time
+//  localparam T_VCS_VAL = FREQUENCY * 150 / 1000 / 1000;
+    localparam T_VCS_VAL = FREQUENCY / 1000 * 150 / 1000;
+    localparam T_VCS_WIDTH = $clog2(T_VCS_VAL-1);
+
+    logic  [T_VCS_WIDTH-1:0] init_counter;    // counter value
+    logic  [T_VCS_WIDTH  :0] init_decrement;  // counter decremented value
+    logic                    init_underflow;  // counter underflow
+    logic                    init_pulse;      // initialization pulse
+
+    always @(posedge clk, negedge rstn)
+    if (~rstn) begin
+        init_counter <= T_VCS_VAL-1;
+        init_done    <= 1'b0;
+        init_pulse   <= 1'b0;
+    end else begin
+        // counter decrement underflow is used as indication the counter reached zero
+        if (~init_underflow) begin
+           init_counter <= init_decrement[T_VCS_WIDTH-1:0];
+        end
+        init_done  <= init_underflow;
+        init_pulse <= init_underflow & ~init_done;// Rising Edge Detect
+    end
+
+    assign init_decrement = {1'b0, init_counter} - 1'd1;
+    assign init_underflow = init_decrement[T_VCS_WIDTH];
+
+///////////////////////////////////////////////////////////////////////////////
+// HyperRAM FSM
+///////////////////////////////////////////////////////////////////////////////
+
     localparam [2:0] INIT_ST   = 3'd0;
     localparam [2:0] CONFIG_ST = 3'd1;
     localparam [2:0] IDLE_ST   = 3'd2;
     localparam [2:0] READ_ST   = 3'd3;
     localparam [2:0] WRITE_ST  = 3'd4;
 
-    reg cfg_now, dq_oen, ram_cs_n, ck_e, ck_e_p;
-    reg wait_for_rd_data;
-    reg [15:0] w_data_w;
-    reg [23:0] cycles_sr;       // shift register counting cycles
-    reg [63:0] dq_sr;           // shifts left 8-bit every cycle
+    logic [2:0] state;
+
+    logic dq_oen, ram_cs_n, ck_e, ck_e_p;
+    logic wait_for_rd_data;
+    logic [15:0] w_data_w;
+    logic [23:0] cycles_sr;       // shift register counting cycles
+    logic [63:0] dq_sr;           // shifts left 8-bit every cycle
 
     // DDR input output signals
     wire [7:0] dq_out_pos = dq_sr[63:56];
     wire [7:0] dq_out_neg = dq_sr[55:48];
     wire [7:0] dq_in_pos;
     wire [7:0] dq_in_neg;
-    reg rwds_out_pos, rwds_out_neg, rwds_oen;
+    logic rwds_out_pos, rwds_out_neg, rwds_oen;
     wire rwds_in_pos, rwds_in_neg;
-    reg additional_latency;
+    logic additional_latency;
 
     assign bus_busy = (state != IDLE_ST);
 
@@ -84,7 +122,7 @@ module psram_controller #(
         dq_sr <= {dq_sr[47:0], 16'b0};          // shift 16-bits each cycle
         ck_e_p <= ck_e;
 
-        if (state == INIT_ST && cfg_now) begin
+        if (state == INIT_ST && init_pulse) begin
             cycles_sr <= 24'b1;
             ram_cs_n <= 0;
             state <= CONFIG_ST;
@@ -154,29 +192,6 @@ module psram_controller #(
     end
 
 ///////////////////////////////////////////////////////////////////////////////
-// Generate cfg_now pulse after 150us initialization delay
-///////////////////////////////////////////////////////////////////////////////
-
-    localparam INIT_TIME = FREQ / 1000 * 160 / 1000;
-    reg  [$clog2(INIT_TIME+1):0]   rst_cnt;
-    reg rst_done, rst_done_p1;
-
-    always @(posedge clk) begin
-    if (~rstn) begin
-        rst_cnt  <= 15'd0;
-        rst_done <= 0;
-        rst_done_p1 <= 0;
-    end
-        rst_done_p1 <= rst_done;
-        cfg_now     <= rst_done & ~rst_done_p1;// Rising Edge Detect
-        if (rst_cnt != INIT_TIME) begin      // count to 160 us
-            rst_cnt  <= rst_cnt[14:0] + 1;
-        end else begin
-            rst_done <= 1;
-        end
-    end
-
-///////////////////////////////////////////////////////////////////////////////
 // HyperRAM `ck`/`ck_n` output
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -225,8 +240,10 @@ module psram_controller #(
 // HyperRAM `cs_n` output
 ///////////////////////////////////////////////////////////////////////////////
 
+    wire cs_n_o;
+
     ODDR oddr_cs_n (
-        .Q0  (cs_n_tbuf),
+        .Q0  (cs_n_o),
         .Q1  (),
         .D0  (ram_cs_n),
         .D1  (ram_cs_n),
@@ -236,7 +253,7 @@ module psram_controller #(
 
     OBUF obuf_cs_n (
         .O   (O_psram_cs_n),
-        .I   (cs_n_tbuf)
+        .I   (cs_n_o)
     );
 
 ///////////////////////////////////////////////////////////////////////////////

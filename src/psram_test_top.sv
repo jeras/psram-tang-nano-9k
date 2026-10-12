@@ -21,9 +21,9 @@ module memory_test (
     localparam [21:0] BYTES = 1024*1024;    // Test write/read this many bytes
 
     // Change PLL and here to choose another speed.
-    localparam FREQ = 81_000_000;
+    localparam FREQUENCY = 81_000_000;
     localparam LATENCY = 3;
-    //localparam FREQ = 102_600_000;
+    //localparam FREQUENCY = 102_600_000;
     //localparam LATENCY = 4;
 
     // Remove UART print module for timing closure (check LED5 for error)
@@ -73,13 +73,15 @@ module memory_test (
     logic          bus_busy;
 
     psram_controller #(
-        .FREQ (FREQ),
+        .FREQUENCY (FREQUENCY),
         .LATENCY(LATENCY)
     ) mem_ctrl (
         // system signals
         .clk             (clk),
         .clk_p           (clk_p),
         .rstn            (rstn),
+        // configuration/status interface
+        .init_done       (),
         // system bus
         .bus_valid       (bus_valid),
         .bus_write       (bus_write),
@@ -270,10 +272,10 @@ module memory_test (
 
     always @(posedge clk)
     if (~rstn) begin
-        tick_counter <= FREQ/10;
+        tick_counter <= FREQUENCY/10;
         tick <= 1'b0;
     end else begin
-        tick_counter <= tick_counter == 0 ? FREQ/10 : tick_counter - 1;
+        tick_counter <= tick_counter == 0 ? FREQUENCY/10 : tick_counter - 1;
         tick <= tick_counter == 0;
     end
 
@@ -285,7 +287,7 @@ module memory_test (
     `include "print.v"
 
     defparam tx.uart_freq=115200;
-    defparam tx.clk_freq=FREQ;
+    defparam tx.clk_freq=FREQUENCY;
 
     assign print_clk = clk;
     assign txp = uart_txp;
