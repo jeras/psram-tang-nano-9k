@@ -1,10 +1,11 @@
-//Copyright (C)2014-2022 Gowin Semiconductor Corporation.
+//Copyright (C)2014-2025 Gowin Semiconductor Corporation.
 //All rights reserved.
 //File Title: IP file
-//GOWIN Version: V1.9.8.07
+//Tool Version: V1.9.11.03 Education
 //Part Number: GW1NR-LV9QN88PC6/I5
-//Device: GW1NR-9C
-//Created Time: Wed Aug 17 00:30:59 2022
+//Device: GW1NR-9
+//Device Version: C
+//Created Time: Tue Oct 13 00:14:09 2026
 
 module Gowin_rPLL (clkout, clkoutp, clkin);
 
@@ -41,35 +42,11 @@ rPLL rpll_inst (
 
 defparam rpll_inst.FCLKIN = "27";
 defparam rpll_inst.DYN_IDIV_SEL = "false";
-// 81 Mhz, LATENCY=3
-defparam rpll_inst.FBDIV_SEL = 2;
-defparam rpll_inst.IDIV_SEL = 0;       
-defparam rpll_inst.ODIV_SEL = 8;
-
-// 102.6 Mhz, LATENCY=4
-//defparam rpll_inst.FBDIV_SEL = 18;
-//defparam rpll_inst.IDIV_SEL = 4;
-//defparam rpll_inst.ODIV_SEL = 8;
-
-// Other possible clock speed:
-// 51 Mhz
-//defparam rpll_inst.IDIV_SEL = 8;
-//defparam rpll_inst.FBDIV_SEL = 16;
-//defparam rpll_inst.ODIV_SEL = 8;
-
-// 74.25 Mhz, 720p pixel clock
-//defparam rpll_inst.IDIV_SEL = 3;
-//defparam rpll_inst.FBDIV_SEL = 10;
-//defparam rpll_inst.ODIV_SEL = 8;
-
-// 11 Mhz
-//defparam rpll_inst.IDIV_SEL = 7;
-//defparam rpll_inst.FBDIV_SEL = 2;
-//defparam rpll_inst.ODIV_SEL = 48;
-
-
+defparam rpll_inst.IDIV_SEL = 0;
 defparam rpll_inst.DYN_FBDIV_SEL = "false";
+defparam rpll_inst.FBDIV_SEL = 2;
 defparam rpll_inst.DYN_ODIV_SEL = "false";
+defparam rpll_inst.ODIV_SEL = 8;
 defparam rpll_inst.PSDA_SEL = "0100";
 defparam rpll_inst.DYN_DA_EN = "false";
 defparam rpll_inst.DUTYDA_SEL = "1000";
@@ -84,6 +61,6 @@ defparam rpll_inst.CLKOUTD_BYPASS = "false";
 defparam rpll_inst.DYN_SDIV_SEL = 2;
 defparam rpll_inst.CLKOUTD_SRC = "CLKOUT";
 defparam rpll_inst.CLKOUTD3_SRC = "CLKOUT";
-//defparam rpll_inst.DEVICE = "GW1NR-9C";
+defparam rpll_inst.DEVICE = "GW1NR-9C";
 
 endmodule //Gowin_rPLL
