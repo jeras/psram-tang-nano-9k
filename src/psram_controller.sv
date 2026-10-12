@@ -49,12 +49,12 @@ module psram_controller #(
     reg [63:0] dq_sr;           // shifts left 8-bit every cycle
 
     // DDR input output signals
-    wire [7:0] dq_out_ris = dq_sr[63:56];
-    wire [7:0] dq_out_fal = dq_sr[55:48];
-    wire [7:0] dq_in_ris;
-    wire [7:0] dq_in_fal;
-    reg rwds_out_ris, rwds_out_fal, rwds_oen;
-    wire rwds_in_ris, rwds_in_fal;
+    wire [7:0] dq_out_pos = dq_sr[63:56];
+    wire [7:0] dq_out_neg = dq_sr[55:48];
+    wire [7:0] dq_in_pos;
+    wire [7:0] dq_in_neg;
+    reg rwds_out_pos, rwds_out_neg, rwds_oen;
+    wire rwds_in_pos, rwds_in_neg;
     reg additional_latency;
 
     assign bus_busy = (state != IDLE_ST);
@@ -75,8 +75,8 @@ module psram_controller #(
         wait_for_rd_data <= 1'b0;
         cycles_sr <= 24'b1;
         w_data_w <= 0;
-        rwds_out_ris <= 1'b0;
-        rwds_out_fal <= 1'b0;
+        rwds_out_pos <= 1'b0;
+        rwds_out_neg <= 1'b0;
         rwds_oen <= 1'b1;
         additional_latency <= 1'b0;
     end else begin
@@ -128,8 +128,8 @@ module psram_controller #(
             end
             if (cycles_sr[9])
                 wait_for_rd_data <= 1;
-            if (wait_for_rd_data && (rwds_in_ris ^ rwds_in_fal)) begin     // sample rwds falling edge to get a word / \_
-                bus_datar <= {dq_in_ris, dq_in_fal};
+            if (wait_for_rd_data && (rwds_in_pos ^ rwds_in_neg)) begin     // sample rwds falling edge to get a word / \_
+                bus_datar <= {dq_in_pos, dq_in_neg};
                 ram_cs_n <= 1;
                 ck_e <= 0;
                 state <= IDLE_ST;
@@ -138,15 +138,15 @@ module psram_controller #(
 
         if (state == WRITE_ST) begin
             if (cycles_sr[5])
-                additional_latency <= rwds_in_fal;  // sample RWDS to see if we need additional latency
+                additional_latency <= rwds_in_neg;  // sample RWDS to see if we need additional latency
             // Write timing is trickier - we sample RWDS at cycle 5 to determine whether we need to wait another tACC.
             // If it is low, data starts at 2+LATENCY. If high, then data starts at 2+LATENCY*2.
-            if (cycles_sr[2+LATENCY] && (LATENCY == 3 ? ~rwds_in_fal : ~additional_latency)
+            if (cycles_sr[2+LATENCY] && (LATENCY == 3 ? ~rwds_in_neg : ~additional_latency)
                 || cycles_sr[2+LATENCY*2])
             begin
                 rwds_oen <= 0;
-                rwds_out_ris <= ~bus_bytee[0];
-                rwds_out_fal <= ~bus_bytee[1];
+                rwds_out_pos <= ~bus_bytee[0];
+                rwds_out_neg <= ~bus_bytee[1];
                 dq_sr[63:48] <= w_data_w;
                 state <= IDLE_ST;
             end
@@ -240,73 +240,95 @@ module psram_controller #(
     );
 
 ///////////////////////////////////////////////////////////////////////////////
-// HyperRAM `rwds` output
+// HyperRAM `rwds` output/input
 ///////////////////////////////////////////////////////////////////////////////
 
-    wire rwds_tbuf;
-    wire rwds_oen_tbuf;
+    wire rwds_o;  // IO output
+    wire rwds_t;  // IO tristate
+    wire rwds_i;  // IO input
+    wire rwds_d;  // IO input delay
 
-    ODDR oddr_rwds(
-        .Q0  (rwds_tbuf),
-        .Q1  (rwds_oen_tbuf),
-        .D0  (rwds_out_ris),
-        .D1  (rwds_out_fal),
+    ODDR oddr_rwds (
+        .Q0  (rwds_o),
+        .Q1  (rwds_t),
+        .D0  (rwds_out_pos),
+        .D1  (rwds_out_neg),
         .TX  (rwds_oen),
         .CLK (clk)
     );
 
-    TBUF tbuf_rwds (
-        .O   (IO_psram_rwds),
-        .I   (rwds_tbuf),
-        .OEN (rwds_oen_tbuf)
+    IOBUF iobuf_rwds (
+        .O   (rwds_i),
+        .IO  (IO_psram_rwds),
+        .I   (rwds_o),
+        .OEN (rwds_t)
+    );
+
+    IODELAY #(
+        .C_STATIC_DLY (0)
+    ) idelay_rwds (
+        .DO    (rwds_d),
+        .DF    (),
+        .DI    (rwds_i),
+        .SDTAP (1'b0),
+        .VALUE (1'b0),
+        .SETN  (1'b0)
+    );
+
+    // Tristate DDR input
+    IDDR iddr_rwds (
+        .Q0  (rwds_in_pos),
+        .Q1  (rwds_in_neg),
+        .D   (rwds_d),
+        .CLK (clk)
     );
 
 ///////////////////////////////////////////////////////////////////////////////
-// HyperRAM `dq` output
+// HyperRAM `dq` output/input
 ///////////////////////////////////////////////////////////////////////////////
 
-    wire [7:0] dq_out_tbuf;
-    wire [7:0] dq_oen_tbuf;
+    wire [7:0] dq_o;  // IO output
+    wire [7:0] dq_t;  // IO tristate
+    wire [7:0] dq_i;  // IO input
+    wire [7:0] dq_d;  // IO input delay
 
     genvar i;
-    generate for (i=0; i<=7; i++) begin: data_o
+    generate for (i=0; i<=7; i++) begin: dq
 
         ODDR oddr_dq (
-            .Q0  (dq_out_tbuf[i]),
-            .Q1  (dq_oen_tbuf[i]),
-            .D0  (dq_out_ris [i]),
-            .D1  (dq_out_fal [i]),
+            .Q0  (dq_o       [i]),
+            .Q1  (dq_t       [i]),
+            .D0  (dq_out_pos [i]),
+            .D1  (dq_out_neg [i]),
             .TX  (dq_oen),
             .CLK (clk)
         );
 
-        TBUF tbuf_dq (
-            .O   (IO_psram_dq[i]),
-            .I   (dq_out_tbuf[i]),
-            .OEN (dq_oen_tbuf[i])
+        IOBUF iobuf_dq (
+            .O   (dq_i       [i]),
+            .IO  (IO_psram_dq[i]),
+            .I   (dq_o       [i]),
+            .OEN (dq_t       [i])
         );
 
-    end endgenerate
+        IODELAY #(
+            .C_STATIC_DLY (0)
+        ) idelay_dq (
+            .DO    (dq_d     [i]),
+            .DF    (),
+            .DI    (dq_i     [i]),
+            .SDTAP (1'b0),
+            .VALUE (1'b0),
+            .SETN  (1'b0)
+        );
 
-///////////////////////////////////////////////////////////////////////////////
-// HyperRAM `dq` input
-///////////////////////////////////////////////////////////////////////////////
-
-    // Tristate DDR input
-    IDDR iddr_rwds (
-        .Q0  (rwds_in_ris),
-        .Q1  (rwds_in_fal),
-        .D   (IO_psram_rwds),
-        .CLK (clk)
-    );
-
-    generate for (i=0; i<=7; i++) begin: data_i
         IDDR iddr_dq (
-            .Q0  (dq_in_ris[i]),
-            .Q1  (dq_in_fal[i]),
-            .D   (IO_psram_dq[i]),
+            .Q0  (dq_in_pos  [i]),
+            .Q1  (dq_in_neg  [i]),
+            .D   (dq_d       [i]),
             .CLK (clk)
         );
+
     end endgenerate
 
 endmodule

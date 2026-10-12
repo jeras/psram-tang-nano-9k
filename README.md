@@ -47,3 +47,8 @@ gives 36ns, which is enough to fulfill the requirement.
 | ≤ 111.1MHz | 4             | 2                         |
 | ≤ 138.8MHz | 5             | 3                         |
 | ≤ 166.6MHz | 6             | 4                         |
+
+## diffrerential clock
+
+LVCMOS18D
+ELVDS_IOBUF
