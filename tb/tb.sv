@@ -17,8 +17,8 @@ module tb ();
     wire  [1:0] psram_cs_n;
 
     // system clock (27Mhz external clock oscillator on Tang Nano 9k)
-    initial    sys_clk = 0;
-    always #37 sys_clk = ~sys_clk;
+    initial            sys_clk = 0;
+    always #(37.037/2) sys_clk = ~sys_clk;
 
     // system reset 
     initial
