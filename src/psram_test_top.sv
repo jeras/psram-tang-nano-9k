@@ -82,6 +82,9 @@ module memory_test (
         .rstn            (rstn),
         // configuration/status interface
         .init_done       (),
+        .cfg_valid       (1'b0),
+        .cfg_addr        (4'hx),
+        .cfg_data        (8'hxx),
         // system bus
         .bus_valid       (bus_valid),
         .bus_write       (bus_write),
