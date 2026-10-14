@@ -9,19 +9,28 @@
 //   0.05% of time.
 
 module psram_controller #(
+    // controller configuration
     parameter FREQUENCY=81_000_000,  // system clock frequency (integer Hz units)
-    parameter LATENCY=3              // tACC (Initial Latency) in W955D8MBYA datasheet:
-                                     // 3 (max 83Mhz), 4 (max 104Mhz), 5 (max 133Mhz) or 6 (max 166Mhz)
+    // HyperRAM configuration (parameter defaults are also HyperRAM device defaults)
+    parameter string DRIVE_STRENGTH       = "34ohm",
+    parameter int    INITIAL_LATENCY      = 7,
+    parameter bit    FIXED_LATENCY_ENABLE = 1'b1,
+    parameter bit    HYBRID_BURST_ENABLE  = 1'b1,
+    parameter int    BURST_LENGTH         = 32,
+    parameter bit    MASTER_CLOCK_TYPE    = 1'b1
+    // NOTE: there are more detailed comments in the code below
 )(
-    // system signals
-    input  logic          clk,
-    input  logic          clk_p,      // phase-shifted clock for driving O_psram_ck
-    input  logic          rstn,
     // configuration/status interface
-    output logic          init_done,  // indicates the end of initialization delay
+    input  logic          cfg_clk,    // clock (independent from system bus clock)
+    input  logic          cfg_rst,    // reset (independent from system bus reset)
     input  logic          cfg_valid,  // handshake valid (the interface is always ready)
     input  logic  [4-1:0] cfg_addr ,  // write address
     input  logic  [8-1:0] cfg_data ,  // write data
+    // system clock/reset
+    input  logic          clk,
+    input  logic          clk_p,      // phase-shifted clock for driving O_psram_ck
+    input  logic          rstn,
+    output logic          init_done,  // indicates the end of initialization delay
     // system bus
     input  logic          bus_valid,  // handshake valid
     input  logic          bus_write,  // 0: read, 1: write
@@ -72,130 +81,214 @@ module psram_controller #(
     assign init_underflow = init_decrement[T_VCS_WIDTH];
 
 ///////////////////////////////////////////////////////////////////////////////
+// HyperRAM configuration/status interface
+///////////////////////////////////////////////////////////////////////////////
+
+    // deep power down enable
+    localparam [15:15] CR0_DEEP_PD = 1'b1;  // normal operation (default)
+
+    // drive strength
+    localparam [07:04] CR0_DRIVE = DRIVE_STRENGTH ==  "34ohm" ? 3'b000 :  // (default)
+                                   DRIVE_STRENGTH == "115ohm" ? 3'b001 :
+                                   DRIVE_STRENGTH ==  "67ohm" ? 3'b010 :
+                                   DRIVE_STRENGTH ==  "46ohm" ? 3'b011 :
+                                   DRIVE_STRENGTH ==  "34ohm" ? 3'b100 :
+                                   DRIVE_STRENGTH ==  "27ohm" ? 3'b101 :
+                                   DRIVE_STRENGTH ==  "22ohm" ? 3'b110 :
+                                   DRIVE_STRENGTH ==  "19ohm" ? 3'b111 :
+                                                                3'bxxx;
+
+    // reserved
+    localparam [11:08] CR0_RESERVED = 4'b1111;  // (default)
+
+    // initial latency
+    localparam [07:04] CR0_LATENCY = INITIAL_LATENCY == 3 ? 4'b1110 :  // CLK <=  83MHz
+                                     INITIAL_LATENCY == 4 ? 4'b1111 :  // CLK <= 100MHz
+                                     INITIAL_LATENCY == 5 ? 4'b0000 :  // CLK <= 133MHz
+                                     INITIAL_LATENCY == 6 ? 4'b0001 :  // CLK <= 166MHz
+                                     INITIAL_LATENCY == 7 ? 4'b1110 :  // CLK <= 200MHz (default)
+                                                            4'bxxxx;
+
+    // fixed latency enable
+    localparam [03:03] CR0_FIXED = FIXED_LATENCY_ENABLE ? 1'b1    // fixed 2 times initial latency (default)
+                                                        : 1'b0;   // variable latency
+
+    // hybrid burst enable
+    localparam [03:03] CR0_HYBRID = HYBRID_BURST_ENABLE ? 1'b1    // wrapped burst sequences in legacy wrapped burst manner (default)
+                                                        : 1'b0;   // wrapped burst sequences to follow hybrid burst sequencing
+
+    // burst length
+    localparam [01:00] CR0_BURST = BURST_LENGTH == 128 ? 2'b00 :
+                                   BURST_LENGTH ==  64 ? 2'b01 :
+                                   BURST_LENGTH ==  16 ? 2'b10 :
+                                   BURST_LENGTH ==  32 ? 2'b11 :  // (default)
+                                                         2'bxx;
+
+    // reserved
+    localparam [15:07] CR1_RESERVED = {8'hFF, 1'b1};  // (default)
+
+    // master clock type
+    localparam [06:06] CR1_CLOCK = MASTER_CLOCK_TYPE ? 1'b1   // single ended (default)
+                                                     : 1'b0;  // differential
+
+    // hybrid sleep
+    localparam [05:05] CR1_SLEEP = 1'b0;  // normal operation (default)
+
+    // partial array refresh
+    localparam [04:02] CR1_PARTIAL = 3'b000;  // full array 2 times (default)
+
+    // distributed refresh interval
+    localparam [04:02] CR1_DISTRIBUTED = 2'b01;  // 4us (default)
+
+    // configuration sequence memory
+    logic [16-1:0] cfg_mem [0:16-1] = '{
+        // Configuration Register 0 Write
+        {2'd0, 2'd0}: {8'h60, 8'h00},  // CA[47:32]
+        {2'd0, 2'd1}: {8'h01, 8'h00},  // CA[31:16]
+        {2'd0, 2'd2}: {8'h00, 8'h00},  // CA[15:00]
+        {2'd0, 2'd3}: {CR0_DEEP_PD, CR0_DRIVE, CR0_RESERVED, CR0_LATENCY, CR0_FIXED, CR0_HYBRID, CR0_BURST},
+        // Configuration Register 1 Write
+        {2'd1, 2'd0}: {8'h60, 8'h00},  // CA[47:32]
+        {2'd1, 2'd1}: {8'h01, 8'h00},  // CA[31:16]
+        {2'd1, 2'd2}: {8'h00, 8'h01},  // CA[15:00]
+        {2'd1, 2'd3}: {CR1_RESERVED, CR1_CLOCK, CR1_SLEEP, CR1_PARTIAL, CR1_DISTRIBUTED},
+        default: '0
+    };
+
+    // write to configuration memory
+    always_ff @(cfg_clk)
+    if (cfg_valid)  cfg_mem[cfg_addr] <= cfg_data;
+
+///////////////////////////////////////////////////////////////////////////////
 // HyperRAM FSM
 ///////////////////////////////////////////////////////////////////////////////
 
-    localparam [3-1:0] ST_INIT   = 3'd0;
-    localparam [3-1:0] ST_CONFIG = 3'd1;
-    localparam [3-1:0] ST_IDLE   = 3'd2;
-    localparam [3-1:0] ST_READ   = 3'd3;
-    localparam [3-1:0] ST_WRITE  = 3'd4;
+    localparam [3-1:0] FSM_INIT   = 3'd0;
+    localparam [3-1:0] FSM_CONFIG = 3'd1;
+    localparam [3-1:0] FSM_IDLE   = 3'd2;
+    localparam [3-1:0] FSM_READ   = 3'd3;
+    localparam [3-1:0] FSM_WRITE  = 3'd4;
 
-    localparam [3:0] CR_LATENCY = LATENCY == 3 ? 4'b1110 :
-                                  LATENCY == 4 ? 4'b1111 :
-                                  LATENCY == 5 ? 4'b0000 :
-                                  LATENCY == 6 ? 4'b0001 :
-                                                 4'b1110;
-
-    logic  [3-1:0] state;
-    logic [24-1:0] cycles_sr;       // shift register counting cycles
+    logic  [3-1:0] fsm_state;
+    logic  [8-1:0] fsm_cycle;       // shift register counting cycles
+    logic          fsm_write;
+    logic          fsm_extended;
     logic [64-1:0] dq_sr;           // shifts left 8-bit every cycle
     logic [16-1:0] w_data_w;
     logic          wait_for_rd_data;
-    logic          additional_latency;
 
     // DDR input/output signals
-    logic         ddr_ck_e;
-    logic         ddr_ck_e_p;
-    logic         ddr_cs_n;
-    logic         ddr_rwds_oen;
-    logic         ddr_rwds_out_pos;
-    logic         ddr_rwds_out_neg;
-    wire          ddr_rwds_in_pos;
-    wire          ddr_rwds_in_neg;
-    logic         ddr_dq_oen;
-    wire  [8-1:0] ddr_dq_out_pos = dq_sr[63:56];
-    wire  [8-1:0] ddr_dq_out_neg = dq_sr[55:48];
-    wire  [8-1:0] ddr_dq_in_pos;
-    wire  [8-1:0] ddr_dq_in_neg;
+    logic         sdr_ck_e;
+    logic         sdr_ck_e_p;
+    logic         sdr_cs_n;
+    logic         sdr_rwds_oen;
+    logic         sdr_rwds_out_pos;
+    logic         sdr_rwds_out_neg;
+    wire          sdr_rwds_in_pos;
+    wire          sdr_rwds_in_neg;
+    logic         sdr_dq_oen;
+    wire  [8-1:0] sdr_dq_out_pos = dq_sr[63:56];
+    wire  [8-1:0] sdr_dq_out_neg = dq_sr[55:48];
+    wire  [8-1:0] sdr_dq_in_pos;
+    wire  [8-1:0] sdr_dq_in_neg;
 
     // Main FSM for HyperRAM read/write
     always @(posedge clk)
     if (~rstn) begin
         // FSM
-        state              <= ST_INIT;
-        cycles_sr          <= 24'b1;
-        dq_sr              <= '0;
-        w_data_w           <= 0;
-        wait_for_rd_data   <= 1'b0;
-        additional_latency <= 1'b0;
+        fsm_state        <= FSM_INIT;
+        fsm_cycle        <= 0;
+        fsm_write        <= 1'b0;
+        fsm_extended     <= 1'b0;
+        dq_sr            <= '0;
+        w_data_w         <= 0;
+        wait_for_rd_data <= 1'b0;
         // DDR input output
-        ddr_ck_e         <= 0;
-        ddr_ck_e_p       <= 1'b0;
-        ddr_cs_n         <= 1;
-        ddr_rwds_out_pos <= 1'b0;
-        ddr_rwds_out_neg <= 1'b0;
-        ddr_rwds_oen     <= 1'b1;
-        ddr_dq_oen       <= 1'b1;
+        sdr_ck_e         <= 0;
+        sdr_ck_e_p       <= 1'b0;
+        sdr_cs_n         <= 1;
+        sdr_rwds_out_pos <= 1'b0;
+        sdr_rwds_out_neg <= 1'b0;
+        sdr_rwds_oen     <= 1'b1;
+        sdr_dq_oen       <= 1'b1;
     end else begin
         dq_sr <= {dq_sr[47:0], 16'b0};          // shift 16-bits each cycle
 
         // TODO: maybe driving this on the clock negative edge would make sense
-        ddr_ck_e_p <= ddr_ck_e;
+        sdr_ck_e_p <= sdr_ck_e;
 
-        unique0 case (state)
-        ST_INIT: begin
+        // sample RWDS to see if additional latency is requested
+        if (fsm_cycle == 5) begin
+            fsm_extended <= sdr_rwds_in_neg;
+        end
+
+        unique0 case (fsm_state)
+        FSM_INIT: begin
             if (init_pulse) begin
-                state <= ST_CONFIG;
-                cycles_sr <= 24'b10;
-                ddr_ck_e <= 1;      // this needs to be earlier 1 cycle to allow for phase shifted clk_p
-                ddr_cs_n <= 0;
-                ddr_dq_oen <= 0;
-                dq_sr <= {8'h60, 8'h00, 8'h01, 8'h00, 8'h00, 8'h00, 8'h8f, CR_LATENCY, 4'h7};      // last byte, 'e' (3 cycle latency max 83Mhz), '7' (variable 1x/2x latency)
+                fsm_state <= FSM_CONFIG;
+                fsm_write     <= 1'b1;
+                sdr_ck_e <= 1;      // this needs to be earlier 1 cycle to allow for phase shifted clk_p
+                sdr_cs_n <= 0;
+                sdr_dq_oen <= 0;
+                dq_sr <= {8'h60, 8'h00, 8'h01, 8'h00, 8'h00, 8'h00, 8'h8f, CR0_LATENCY, 4'h7};      // last byte, 'e' (3 cycle latency max 83Mhz), '7' (variable 1x/2x latency)
             end
         end
-        ST_CONFIG: begin
-            if (cycles_sr[4]) begin
-                state <= ST_IDLE;
-                cycles_sr <= 24'b1;
-                ddr_ck_e <= 0;
-                ddr_cs_n <= 1;
-                ddr_dq_oen <= 1;
-            end else begin
-                cycles_sr <= {cycles_sr[22:0], 1'b0};
+        FSM_CONFIG: begin
+            fsm_cycle <= fsm_cycle + 1;
+            if (fsm_cycle == 3) begin
+                fsm_state <= FSM_IDLE;
+                fsm_cycle <= 24'b0;
+                sdr_ck_e <= 0;
+                sdr_cs_n <= 1;
             end
         end
-        ST_IDLE: begin
+        FSM_IDLE: begin
+            sdr_rwds_oen <= 1;
             if (bus_valid) begin
                 // start read/write operation
-                state <= bus_write ? ST_WRITE : ST_READ;
-                cycles_sr <= 32'b10;
+                fsm_state <= bus_write ? FSM_WRITE : FSM_READ;
+                fsm_write <= bus_write;
                         //      14-bit                     18-bit   13-bit   3-bit             total 48-bit CA
                 dq_sr <= {~bus_write, 13'b010_0000_0000_00, bus_addr[21:4], 13'b0, bus_addr[3:1], 16'b0000_0100_1101_0100};
-                ddr_ck_e <= 1;
-                ddr_cs_n <= 0;
+                sdr_ck_e <= 1;
+                sdr_cs_n <= 0;
                 wait_for_rd_data <= 0;
                 w_data_w <= bus_dataw;
             end
         end
-        ST_READ: begin
-            if (cycles_sr[3]) begin
-                // command sent, now wait for result
-                ddr_dq_oen <= 1;
+        FSM_READ: begin
+            fsm_cycle <= fsm_cycle + 1;
+            if (fsm_cycle == INITIAL_LATENCY) begin
+                sdr_dq_oen <= ~fsm_write;
             end
-            if (cycles_sr[9])
+            if (fsm_cycle == 8)
                 wait_for_rd_data <= 1;
-            if (wait_for_rd_data && (ddr_rwds_in_pos ^ ddr_rwds_in_neg)) begin     // sample rwds falling edge to get a word / \_
-                ddr_cs_n <= 1;
-                ddr_ck_e <= 0;
-                state <= ST_IDLE;
+            if (wait_for_rd_data && (sdr_rwds_in_pos ^ sdr_rwds_in_neg)) begin     // sample rwds falling edge to get a word / \_
+                sdr_cs_n <= 1;
+                sdr_ck_e <= 0;
+                fsm_state <= FSM_IDLE;
+                fsm_cycle <= 0;
             end
         end
-        ST_WRITE: begin
-            if (cycles_sr[5])
-                additional_latency <= ddr_rwds_in_neg;  // sample RWDS to see if we need additional latency
-            // Write timing is trickier - we sample RWDS at cycle 5 to determine whether we need to wait another tACC.
+        FSM_WRITE: begin
+            fsm_cycle <= fsm_cycle + 1;
+            if (fsm_cycle == INITIAL_LATENCY) begin
+                sdr_dq_oen <= ~fsm_write;
+                sdr_rwds_oen <= 0;
+            end
             // If it is low, data starts at 2+LATENCY. If high, then data starts at 2+LATENCY*2.
-            if (cycles_sr[2+LATENCY] && (LATENCY == 3 ? ~ddr_rwds_in_neg : ~additional_latency)
-                || cycles_sr[2+LATENCY*2])
+            if (fsm_extended ? (fsm_cycle == 1+INITIAL_LATENCY*2) : (fsm_cycle == 1+INITIAL_LATENCY))
             begin
-                ddr_rwds_oen <= 0;
-                ddr_rwds_out_pos <= ~bus_bytee[0];
-                ddr_rwds_out_neg <= ~bus_bytee[1];
+                sdr_rwds_out_pos <= ~bus_bytee[0];
+                sdr_rwds_out_neg <= ~bus_bytee[1];
                 dq_sr[63:48] <= w_data_w;
-                state <= ST_IDLE;
-            end else begin
-                cycles_sr <= {cycles_sr[22:0], 1'b0};
+            end
+            if (fsm_extended ? (fsm_cycle == 2+INITIAL_LATENCY*2) : (fsm_cycle == 2+INITIAL_LATENCY))
+            begin
+                fsm_state <= FSM_IDLE;
+                fsm_cycle <= 0;
+                sdr_ck_e <= 0;
+                sdr_cs_n <= 1;
             end
         end
         endcase
@@ -205,12 +298,12 @@ module psram_controller #(
 // system bus
 ///////////////////////////////////////////////////////////////////////////////
 
-    assign bus_datar = {ddr_dq_in_pos, ddr_dq_in_neg};
+    assign bus_datar = {sdr_dq_in_pos, sdr_dq_in_neg};
 
-    assign bus_busy = (state != ST_IDLE);
+    assign bus_busy = (fsm_state != FSM_IDLE);
 
 ///////////////////////////////////////////////////////////////////////////////
-// HyperRAM `ck`/`ck_n` output
+// HyperRAM RESET# output
 ///////////////////////////////////////////////////////////////////////////////
 
     OBUF obuf_reset_n (
@@ -219,26 +312,26 @@ module psram_controller #(
     );
 
 ///////////////////////////////////////////////////////////////////////////////
-// HyperRAM `ck`/`ck_n` output
+// HyperRAM CK/CK# output
 ///////////////////////////////////////////////////////////////////////////////
 
-    wire ck_o;
-    wire ck_n_o;
+    wire ddr_ck_o;    // IO output
+    wire ddr_ck_n_o;  // IO output
 
     // Note: ck uses phase-shifted clock clk_p
     ODDR oddr_ck (
-        .Q0  (ck_o),
+        .Q0  (ddr_ck_o),
         .Q1  (),
-        .D0  (ddr_ck_e_p),
+        .D0  (sdr_ck_e_p),
         .D1  (1'b0),
         .TX  (1'b1),
         .CLK (clk_p)
     );
 
     ODDR oddr_ck_n (
-        .Q0  (ck_n_o),
+        .Q0  (ddr_ck_n_o),
         .Q1  (),
-        .D0  (~ddr_ck_e_p),
+        .D0  (~sdr_ck_e_p),
         .D1  (1'b1),
         .TX  (1'b1),
         .CLK (clk_p)
@@ -246,65 +339,65 @@ module psram_controller #(
 
     OBUF obuf_ck (
         .O   (O_psram_ck),
-        .I   (ck_o)
+        .I   (ddr_ck_o)
     );
 
     OBUF obuf_ck_p (
         .O   (O_psram_ck_n),
-        .I   (ck_n_o)
+        .I   (ddr_ck_n_o)
     );
 
 ///////////////////////////////////////////////////////////////////////////////
-// HyperRAM `cs_n` output
+// HyperRAM CS# output
 ///////////////////////////////////////////////////////////////////////////////
 
-    wire cs_n_o;
+    wire ddr_cs_n_o;  // IO output
 
     ODDR oddr_cs_n (
-        .Q0  (cs_n_o),
+        .Q0  (ddr_cs_n_o),
         .Q1  (),
-        .D0  (ddr_cs_n),
-        .D1  (ddr_cs_n),
+        .D0  (sdr_cs_n),
+        .D1  (sdr_cs_n),
         .TX  (1'b1),
         .CLK (clk)
     );
 
     OBUF obuf_cs_n (
         .O   (O_psram_cs_n),
-        .I   (cs_n_o)
+        .I   (ddr_cs_n_o)
     );
 
 ///////////////////////////////////////////////////////////////////////////////
-// HyperRAM `rwds` output/input
+// HyperRAM RWDS output/input
 ///////////////////////////////////////////////////////////////////////////////
 
-    wire rwds_o;  // IO output
-    wire rwds_t;  // IO tristate
-    wire rwds_i;  // IO input
-    wire rwds_d;  // IO input delay
+    wire ddr_rwds_o;  // IO output
+    wire ddr_rwds_t;  // IO tristate
+    wire ddr_rwds_i;  // IO input
+    wire ddr_rwds_d;  // IO input delay
 
     ODDR oddr_rwds (
-        .Q0  (rwds_o),
-        .Q1  (rwds_t),
-        .D0  (ddr_rwds_out_pos),
-        .D1  (ddr_rwds_out_neg),
-        .TX  (ddr_rwds_oen),
+        .Q0  (ddr_rwds_o),
+        .Q1  (ddr_rwds_t),
+        .D0  (sdr_rwds_out_pos),
+        .D1  (sdr_rwds_out_neg),
+        .TX  (sdr_rwds_oen),
         .CLK (clk)
     );
 
     IOBUF iobuf_rwds (
-        .O   (rwds_i),
+        .O   (ddr_rwds_i),
         .IO  (IO_psram_rwds),
-        .I   (rwds_o),
-        .OEN (rwds_t)
+        .I   (ddr_rwds_o),
+        .OEN (ddr_rwds_t)
     );
 
     IODELAY #(
         .C_STATIC_DLY (0)
     ) idelay_rwds (
-        .DO    (rwds_d),
+        .DO    (ddr_rwds_d),
         .DF    (),
-        .DI    (rwds_i),
+        .DI    (ddr_rwds_i),
         .SDTAP (1'b0),
         .VALUE (1'b0),
         .SETN  (1'b0)
@@ -312,55 +405,55 @@ module psram_controller #(
 
     // Tristate DDR input
     IDDR iddr_rwds (
-        .Q0  (ddr_rwds_in_pos),
-        .Q1  (ddr_rwds_in_neg),
-        .D   (rwds_d),
+        .Q0  (sdr_rwds_in_pos),
+        .Q1  (sdr_rwds_in_neg),
+        .D   (ddr_rwds_d),
         .CLK (clk)
     );
 
 ///////////////////////////////////////////////////////////////////////////////
-// HyperRAM `dq` output/input
+// HyperRAM DQ output/input
 ///////////////////////////////////////////////////////////////////////////////
 
-    wire [7:0] dq_o;  // IO output
-    wire [7:0] dq_t;  // IO tristate
-    wire [7:0] dq_i;  // IO input
-    wire [7:0] dq_d;  // IO input delay
+    wire [7:0] ddr_dq_o;  // IO output
+    wire [7:0] ddr_dq_t;  // IO tristate
+    wire [7:0] ddr_dq_i;  // IO input
+    wire [7:0] ddr_dq_d;  // IO input delay
 
     genvar i;
     generate for (i=0; i<=7; i++) begin: dq
 
         ODDR oddr_dq (
-            .Q0  (dq_o          [i]),
-            .Q1  (dq_t          [i]),
-            .D0  (ddr_dq_out_pos[i]),
-            .D1  (ddr_dq_out_neg[i]),
-            .TX  (ddr_dq_oen),
+            .Q0  (ddr_dq_o      [i]),
+            .Q1  (ddr_dq_t      [i]),
+            .D0  (sdr_dq_out_pos[i]),
+            .D1  (sdr_dq_out_neg[i]),
+            .TX  (sdr_dq_oen),
             .CLK (clk)
         );
 
         IOBUF iobuf_dq (
-            .O   (dq_i          [i]),
+            .O   (ddr_dq_i      [i]),
             .IO  (IO_psram_dq   [i]),
-            .I   (dq_o          [i]),
-            .OEN (dq_t          [i])
+            .I   (ddr_dq_o      [i]),
+            .OEN (ddr_dq_t      [i])
         );
 
         IODELAY #(
             .C_STATIC_DLY (0)
         ) idelay_dq (
-            .DO    (dq_d        [i]),
+            .DO    (ddr_dq_d    [i]),
             .DF    (),
-            .DI    (dq_i        [i]),
+            .DI    (ddr_dq_i    [i]),
             .SDTAP (1'b0),
             .VALUE (1'b0),
             .SETN  (1'b0)
         );
 
         IDDR iddr_dq (
-            .Q0  (ddr_dq_in_pos [i]),
-            .Q1  (ddr_dq_in_neg [i]),
-            .D   (dq_d          [i]),
+            .Q0  (sdr_dq_in_pos [i]),
+            .Q1  (sdr_dq_in_neg [i]),
+            .D   (ddr_dq_d      [i]),
             .CLK (clk)
         );
 

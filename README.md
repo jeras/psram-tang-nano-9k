@@ -27,9 +27,9 @@ Feng Zhou, 2022.8
 
 # Notes
 
-`
+## Cycle timing
 
-## `t_RWR` Read Write Recovery
+### `t_RWR` Read Write Recovery
 
 This is defined as the time from `CS#` rising edge (end of previous transaction)
 to the 4-th clock edge within a new transaction.
@@ -47,6 +47,29 @@ gives 36ns, which is enough to fulfill the requirement.
 | ≤ 111.1MHz | 4             | 2                         |
 | ≤ 138.8MHz | 5             | 3                         |
 | ≤ 166.6MHz | 6             | 4                         |
+
+### 
+
+The `RWDS` signal provides information whether the memory device requires additional latency.
+Since this information is provided for several clock periods, giving ample setup/hold timing,
+there is no need to sample the signal with a DDR receiver,
+it can be sampled with a low latency I/O block `IREG`.
+
+The `RWDS` signal becomes valid `t_DVS` after `CS#` becomes active.
+For a 166MHz PSRAM device this time is 
+
+During a read cycle `t_CKDSR` (`CK` transition to `RWDS` Low @CA phase @Read)
+is the time it takes for `RWDS` to transition to low
+from the sixth `CK` edge ending the CA phase.
+For a 166MHz PSRAM device this time is min. _1ns_ and max. _5.5ns_.
+
+During a write cycle `t_DSZ` (`CS#` Inactive to `RWDS` High-Z)
+is the time it takes for `RWDS` to transition to high impedance
+from the sixth `CK` edge ending the CA phase.
+For a 166MHz PSRAM device this time is max. _6ns_.
+
+
+## Data driving and sampling timing
 
 ## diffrerential clock
 
