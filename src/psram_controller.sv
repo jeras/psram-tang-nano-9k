@@ -174,17 +174,20 @@ module psram_controller #(
 // HyperRAM FSM
 ///////////////////////////////////////////////////////////////////////////////
 
-    localparam [2-1:0] FSM_INIT   = 3'd0;
-    localparam [2-1:0] FSM_IDLE   = 3'd1;
-    localparam [2-1:0] FSM_READ   = 3'd2;
-    localparam [2-1:0] FSM_WRITE  = 3'd3;
+    localparam [2-1:0] FSM_INIT   = 2'b00;
+    localparam [2-1:0] FSM_IDLE   = 2'b01;
+    localparam [2-1:0] FSM_READ   = 2'b10;
+    localparam [2-1:0] FSM_WRITE  = 2'b11;
 
+    // system bus signals
+    wire           bus_transfer;
+
+    // FSM signals
     logic  [2-1:0] fsm_state;
-    logic  [8-1:0] fsm_cycle;       // shift register counting cycles
-    logic          fsm_write;
+    logic  [8-1:0] fsm_cycle;       // cycle counter
     logic          fsm_extended;
-    logic [64-1:0] dq_sr;           // shifts left 8-bit every cycle
-    logic [16-1:0] w_data_w;
+    logic [32-1:0] fsm_ac_sr;       // address-control shift register
+    logic [16-1:0] fsm_dataw;
     logic          wait_for_rd_data;
 
     // DDR input/output signals
@@ -197,8 +200,8 @@ module psram_controller #(
     wire          sdr_rwds_i_p;
     wire          sdr_rwds_i_n;
     logic         sdr_dq_t;
-    wire  [8-1:0] sdr_dq_o_p;
-    wire  [8-1:0] sdr_dq_o_n;
+    logic [8-1:0] sdr_dq_o_p;
+    logic [8-1:0] sdr_dq_o_n;
     wire  [8-1:0] sdr_dq_i_p;
     wire  [8-1:0] sdr_dq_i_n;
 
@@ -207,8 +210,31 @@ module psram_controller #(
     assign cfg_idx = 2'b0;
 
     // multiplexing data paths
-    assign sdr_dq_o_p = (fsm_state == FSM_INIT) ? cfg_dq[07:00] : dq_sr[63:56];
-    assign sdr_dq_o_n = (fsm_state == FSM_INIT) ? cfg_dq[15:08] : dq_sr[55:48];
+//    assign sdr_dq_o_p = (fsm_state == FSM_INIT) ? cfg_dq[15:08] : (fsm_cycle < 4) ? fsm_ac_sr[47:40] : fsm_dataw[07:00];
+//    assign sdr_dq_o_n = (fsm_state == FSM_INIT) ? cfg_dq[07:00] : (fsm_cycle < 4) ? fsm_ac_sr[39:32] : fsm_dataw[15:08];
+    always_comb begin
+        if (fsm_state == FSM_INIT) begin
+            sdr_dq_o_p = cfg_dq[15:08];
+            sdr_dq_o_n = cfg_dq[07:00];
+        end else if (bus_transfer) begin
+            sdr_dq_o_p = {~bus_write, 7'b010_00};
+            sdr_dq_o_n = 8'h00;
+        end else if (fsm_cycle < 4) begin
+            sdr_dq_o_p = fsm_ac_sr[31:16];
+            sdr_dq_o_n = fsm_ac_sr[15:00];
+        end else begin
+            sdr_dq_o_p = fsm_dataw[07:00];
+            sdr_dq_o_n = fsm_dataw[15:08];
+        end
+    end
+
+    // SDR signals
+//    always_comb begin
+//        if (((fsm_state == FSM_INIT) & init_done) | ((fsm_state == FSM_IDLE) & bus_transfer)) begin
+//            sdr_ck_e <= 1;      // this needs to be earlier 1 cycle to allow for phase shifted clk_p
+//            sdr_cs_n <= 0;
+//            sdr_dq_t <= 0;
+//    end    
 
     // Main FSM for HyperRAM read/write
     always @(posedge clk)
@@ -216,10 +242,9 @@ module psram_controller #(
         // FSM
         fsm_state        <= FSM_INIT;
         fsm_cycle        <= 0;
-        fsm_write        <= 1'b0;
         fsm_extended     <= 1'b0;
-        dq_sr            <= '0;
-        w_data_w         <= 0;
+        fsm_ac_sr        <= '0;
+        fsm_dataw        <= 0;
         wait_for_rd_data <= 1'b0;
         // DDR input output
         sdr_ck_e     <= 0;
@@ -230,8 +255,6 @@ module psram_controller #(
         sdr_rwds_t   <= 1'b1;
         sdr_dq_t     <= 1'b1;
     end else begin
-        dq_sr <= {dq_sr[47:0], 16'b0};          // shift 16-bits each cycle
-
         // TODO: maybe driving this on the clock negative edge would make sense
         sdr_ck_e_p <= sdr_ck_e;
 
@@ -243,7 +266,6 @@ module psram_controller #(
         unique0 case (fsm_state)
         FSM_INIT: begin
             if (init_pulse) begin
-                fsm_write     <= 1'b1;
                 sdr_ck_e <= 1;      // this needs to be earlier 1 cycle to allow for phase shifted clk_p
                 sdr_cs_n <= 0;
                 sdr_dq_t <= 0;
@@ -259,22 +281,21 @@ module psram_controller #(
         end
         FSM_IDLE: begin
             sdr_rwds_t <= 1;
-            if (bus_valid) begin
+            if (bus_transfer) begin
                 // start read/write operation
                 fsm_state <= bus_write ? FSM_WRITE : FSM_READ;
-                fsm_write <= bus_write;
-                        //      14-bit                     18-bit   13-bit   3-bit             total 48-bit CA
-                dq_sr <= {~bus_write, 13'b010_0000_0000_00, bus_addr[21:4], 13'b0, bus_addr[3:1], 16'b0000_0100_1101_0100};
+                fsm_ac_sr <= {bus_addr[21:4], 13'b0, bus_addr[3:1], 16'b0000_0100_1101_0100};
                 sdr_ck_e <= 1;
                 sdr_cs_n <= 0;
                 wait_for_rd_data <= 0;
-                w_data_w <= bus_dataw;
+                fsm_dataw <= bus_dataw;
             end
         end
         FSM_READ: begin
             fsm_cycle <= fsm_cycle + 1;
+            fsm_ac_sr <= {fsm_ac_sr[31:0], 16'b0};
             if (fsm_cycle == INITIAL_LATENCY) begin
-                sdr_dq_t <= ~fsm_write;
+                sdr_dq_t <= 1'b1;
             end
             if (fsm_cycle == 8)
                 wait_for_rd_data <= 1;
@@ -287,8 +308,9 @@ module psram_controller #(
         end
         FSM_WRITE: begin
             fsm_cycle <= fsm_cycle + 1;
+            fsm_ac_sr <= {fsm_ac_sr[31:0], 16'b0};
             if (fsm_cycle == INITIAL_LATENCY) begin
-                sdr_dq_t <= ~fsm_write;
+                sdr_dq_t <= 1'b0;
                 sdr_rwds_t <= 0;
             end
             // If it is low, data starts at 2+LATENCY. If high, then data starts at 2+LATENCY*2.
@@ -296,7 +318,6 @@ module psram_controller #(
             begin
                 sdr_rwds_o_p <= ~bus_bytee[0];
                 sdr_rwds_o_n <= ~bus_bytee[1];
-                dq_sr[63:48] <= w_data_w;
             end
             if (fsm_extended ? (fsm_cycle == 2+INITIAL_LATENCY*2) : (fsm_cycle == 2+INITIAL_LATENCY))
             begin
@@ -312,6 +333,9 @@ module psram_controller #(
 ///////////////////////////////////////////////////////////////////////////////
 // system bus
 ///////////////////////////////////////////////////////////////////////////////
+
+    // transfer
+    assign bus_transfer = bus_valid & ~bus_busy;
 
     assign bus_datar = {sdr_dq_i_p, sdr_dq_i_n};
 
