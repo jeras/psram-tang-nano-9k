@@ -1,0 +1,10 @@
+{
+    "name": "psram-tang-nano-9k",
+    "targets": {
+        "rtl": {
+            "libraryMapping": {
+                "": "work"
+            }
+        }
+    }
+}
