@@ -20,12 +20,12 @@ module psram_controller #(
     parameter bit    MASTER_CLOCK_TYPE    = 1'b1
     // NOTE: there are more detailed comments in the code below
 )(
-    // configuration/status interface
-    input  logic          cfg_clk,    // clock (independent from system bus clock)
-    input  logic          cfg_rst,    // reset (independent from system bus reset)
-    input  logic          cfg_valid,  // handshake valid (the interface is always ready)
-    input  logic  [4-1:0] cfg_addr ,  // write address
-    input  logic  [8-1:0] cfg_data ,  // write data
+    // control interface
+    input  logic          ctl_clk,    // clock (independent from system bus clock)
+    input  logic          ctl_rst,    // reset (independent from system bus reset)
+    input  logic          ctl_valid,  // handshake valid (the interface is always ready)
+    input  logic  [4-1:0] ctl_addr ,  // write address
+    input  logic  [8-1:0] ctl_data ,  // write data
     // system clock/reset
     input  logic          clk,
     input  logic          clk_p,      // phase-shifted clock for driving O_psram_ck
@@ -155,21 +155,31 @@ module psram_controller #(
         default: '0
     };
 
-    // write to configuration memory
-    always_ff @(cfg_clk)
-    if (cfg_valid)  cfg_mem[cfg_addr] <= cfg_data;
+    // configuration memory readout signals
+    logic  [2-1:0] cfg_cnt;
+    logic  [2-1:0] cfg_idx;
+    logic [16-1:0] cfg_dq;
+
+    // write to configuration memory (big endian)
+    always_ff @(ctl_clk)
+    if (ctl_valid) begin
+        if (ctl_addr[0]) cfg_mem[ctl_addr][07:00] <= ctl_data;
+        else             cfg_mem[ctl_addr][15:08] <= ctl_data;
+    end
+
+    // configuration memory readout
+    assign cfg_dq = cfg_mem[{cfg_idx, cfg_cnt}];
 
 ///////////////////////////////////////////////////////////////////////////////
 // HyperRAM FSM
 ///////////////////////////////////////////////////////////////////////////////
 
-    localparam [3-1:0] FSM_INIT   = 3'd0;
-    localparam [3-1:0] FSM_CONFIG = 3'd1;
-    localparam [3-1:0] FSM_IDLE   = 3'd2;
-    localparam [3-1:0] FSM_READ   = 3'd3;
-    localparam [3-1:0] FSM_WRITE  = 3'd4;
+    localparam [2-1:0] FSM_INIT   = 3'd0;
+    localparam [2-1:0] FSM_IDLE   = 3'd1;
+    localparam [2-1:0] FSM_READ   = 3'd2;
+    localparam [2-1:0] FSM_WRITE  = 3'd3;
 
-    logic  [3-1:0] fsm_state;
+    logic  [2-1:0] fsm_state;
     logic  [8-1:0] fsm_cycle;       // shift register counting cycles
     logic          fsm_write;
     logic          fsm_extended;
@@ -181,16 +191,24 @@ module psram_controller #(
     logic         sdr_ck_e;
     logic         sdr_ck_e_p;
     logic         sdr_cs_n;
-    logic         sdr_rwds_oen;
-    logic         sdr_rwds_out_pos;
-    logic         sdr_rwds_out_neg;
-    wire          sdr_rwds_in_pos;
-    wire          sdr_rwds_in_neg;
-    logic         sdr_dq_oen;
-    wire  [8-1:0] sdr_dq_out_pos = dq_sr[63:56];
-    wire  [8-1:0] sdr_dq_out_neg = dq_sr[55:48];
-    wire  [8-1:0] sdr_dq_in_pos;
-    wire  [8-1:0] sdr_dq_in_neg;
+    logic         sdr_rwds_t;
+    logic         sdr_rwds_o_p;
+    logic         sdr_rwds_o_n;
+    wire          sdr_rwds_i_p;
+    wire          sdr_rwds_i_n;
+    logic         sdr_dq_t;
+    wire  [8-1:0] sdr_dq_o_p;
+    wire  [8-1:0] sdr_dq_o_n;
+    wire  [8-1:0] sdr_dq_i_p;
+    wire  [8-1:0] sdr_dq_i_n;
+
+    // configuration memory addressing
+    assign cfg_cnt = fsm_cycle[1:0];
+    assign cfg_idx = 2'b0;
+
+    // multiplexing data paths
+    assign sdr_dq_o_p = (fsm_state == FSM_INIT) ? cfg_dq[07:00] : dq_sr[63:56];
+    assign sdr_dq_o_n = (fsm_state == FSM_INIT) ? cfg_dq[15:08] : dq_sr[55:48];
 
     // Main FSM for HyperRAM read/write
     always @(posedge clk)
@@ -204,13 +222,13 @@ module psram_controller #(
         w_data_w         <= 0;
         wait_for_rd_data <= 1'b0;
         // DDR input output
-        sdr_ck_e         <= 0;
-        sdr_ck_e_p       <= 1'b0;
-        sdr_cs_n         <= 1;
-        sdr_rwds_out_pos <= 1'b0;
-        sdr_rwds_out_neg <= 1'b0;
-        sdr_rwds_oen     <= 1'b1;
-        sdr_dq_oen       <= 1'b1;
+        sdr_ck_e     <= 0;
+        sdr_ck_e_p   <= 1'b0;
+        sdr_cs_n     <= 1;
+        sdr_rwds_o_p <= 1'b0;
+        sdr_rwds_o_n <= 1'b0;
+        sdr_rwds_t   <= 1'b1;
+        sdr_dq_t     <= 1'b1;
     end else begin
         dq_sr <= {dq_sr[47:0], 16'b0};          // shift 16-bits each cycle
 
@@ -219,31 +237,28 @@ module psram_controller #(
 
         // sample RWDS to see if additional latency is requested
         if (fsm_cycle == 5) begin
-            fsm_extended <= sdr_rwds_in_neg;
+            fsm_extended <= sdr_rwds_i_n;
         end
 
         unique0 case (fsm_state)
         FSM_INIT: begin
             if (init_pulse) begin
-                fsm_state <= FSM_CONFIG;
                 fsm_write     <= 1'b1;
                 sdr_ck_e <= 1;      // this needs to be earlier 1 cycle to allow for phase shifted clk_p
                 sdr_cs_n <= 0;
-                sdr_dq_oen <= 0;
-                dq_sr <= {8'h60, 8'h00, 8'h01, 8'h00, 8'h00, 8'h00, 8'h8f, CR0_LATENCY, 4'h7};      // last byte, 'e' (3 cycle latency max 83Mhz), '7' (variable 1x/2x latency)
-            end
-        end
-        FSM_CONFIG: begin
-            fsm_cycle <= fsm_cycle + 1;
-            if (fsm_cycle == 3) begin
-                fsm_state <= FSM_IDLE;
-                fsm_cycle <= 24'b0;
-                sdr_ck_e <= 0;
-                sdr_cs_n <= 1;
+                sdr_dq_t <= 0;
+            end else if (init_done) begin
+                fsm_cycle <= fsm_cycle + 1;
+                if (fsm_cycle == 3) begin
+                    fsm_state <= FSM_IDLE;
+                    fsm_cycle <= 24'b0;
+                    sdr_ck_e <= 0;
+                    sdr_cs_n <= 1;
+                end
             end
         end
         FSM_IDLE: begin
-            sdr_rwds_oen <= 1;
+            sdr_rwds_t <= 1;
             if (bus_valid) begin
                 // start read/write operation
                 fsm_state <= bus_write ? FSM_WRITE : FSM_READ;
@@ -259,11 +274,11 @@ module psram_controller #(
         FSM_READ: begin
             fsm_cycle <= fsm_cycle + 1;
             if (fsm_cycle == INITIAL_LATENCY) begin
-                sdr_dq_oen <= ~fsm_write;
+                sdr_dq_t <= ~fsm_write;
             end
             if (fsm_cycle == 8)
                 wait_for_rd_data <= 1;
-            if (wait_for_rd_data && (sdr_rwds_in_pos ^ sdr_rwds_in_neg)) begin     // sample rwds falling edge to get a word / \_
+            if (wait_for_rd_data && (sdr_rwds_i_p ^ sdr_rwds_i_n)) begin     // sample rwds falling edge to get a word / \_
                 sdr_cs_n <= 1;
                 sdr_ck_e <= 0;
                 fsm_state <= FSM_IDLE;
@@ -273,14 +288,14 @@ module psram_controller #(
         FSM_WRITE: begin
             fsm_cycle <= fsm_cycle + 1;
             if (fsm_cycle == INITIAL_LATENCY) begin
-                sdr_dq_oen <= ~fsm_write;
-                sdr_rwds_oen <= 0;
+                sdr_dq_t <= ~fsm_write;
+                sdr_rwds_t <= 0;
             end
             // If it is low, data starts at 2+LATENCY. If high, then data starts at 2+LATENCY*2.
             if (fsm_extended ? (fsm_cycle == 1+INITIAL_LATENCY*2) : (fsm_cycle == 1+INITIAL_LATENCY))
             begin
-                sdr_rwds_out_pos <= ~bus_bytee[0];
-                sdr_rwds_out_neg <= ~bus_bytee[1];
+                sdr_rwds_o_p <= ~bus_bytee[0];
+                sdr_rwds_o_n <= ~bus_bytee[1];
                 dq_sr[63:48] <= w_data_w;
             end
             if (fsm_extended ? (fsm_cycle == 2+INITIAL_LATENCY*2) : (fsm_cycle == 2+INITIAL_LATENCY))
@@ -298,7 +313,7 @@ module psram_controller #(
 // system bus
 ///////////////////////////////////////////////////////////////////////////////
 
-    assign bus_datar = {sdr_dq_in_pos, sdr_dq_in_neg};
+    assign bus_datar = {sdr_dq_i_p, sdr_dq_i_n};
 
     assign bus_busy = (fsm_state != FSM_IDLE);
 
@@ -379,9 +394,9 @@ module psram_controller #(
     ODDR oddr_rwds (
         .Q0  (ddr_rwds_o),
         .Q1  (ddr_rwds_t),
-        .D0  (sdr_rwds_out_pos),
-        .D1  (sdr_rwds_out_neg),
-        .TX  (sdr_rwds_oen),
+        .D0  (sdr_rwds_o_p),
+        .D1  (sdr_rwds_o_n),
+        .TX  (sdr_rwds_t),
         .CLK (clk)
     );
 
@@ -405,8 +420,8 @@ module psram_controller #(
 
     // Tristate DDR input
     IDDR iddr_rwds (
-        .Q0  (sdr_rwds_in_pos),
-        .Q1  (sdr_rwds_in_neg),
+        .Q0  (sdr_rwds_i_p),
+        .Q1  (sdr_rwds_i_n),
         .D   (ddr_rwds_d),
         .CLK (clk)
     );
@@ -423,12 +438,12 @@ module psram_controller #(
     genvar i;
     generate for (i=0; i<=7; i++) begin: dq
 
-        ODDR oddr_dq (
+        ODDR #(.TXCLK_POL (1'b1)) oddr_dq (
             .Q0  (ddr_dq_o      [i]),
             .Q1  (ddr_dq_t      [i]),
-            .D0  (sdr_dq_out_pos[i]),
-            .D1  (sdr_dq_out_neg[i]),
-            .TX  (sdr_dq_oen),
+            .D0  (sdr_dq_o_p[i]),
+            .D1  (sdr_dq_o_n[i]),
+            .TX  (sdr_dq_t),
             .CLK (clk)
         );
 
@@ -451,8 +466,8 @@ module psram_controller #(
         );
 
         IDDR iddr_dq (
-            .Q0  (sdr_dq_in_pos [i]),
-            .Q1  (sdr_dq_in_neg [i]),
+            .Q0  (sdr_dq_i_p [i]),
+            .Q1  (sdr_dq_i_n [i]),
             .D   (ddr_dq_d      [i]),
             .CLK (clk)
         );

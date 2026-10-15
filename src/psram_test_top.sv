@@ -78,10 +78,12 @@ module memory_test (
         // HyperRAM device configuration
         .INITIAL_LATENCY (LATENCY)
     ) mem_ctrl (
-        // configuration/status interface
-        .cfg_valid       (1'b0),
-        .cfg_addr        (4'hx),
-        .cfg_data        (8'hxx),
+        // control interface (independent from system bus clock/reset)
+        .ctl_clk         (1'b0),
+        .ctl_rst         (1'b0),
+        .ctl_valid       (1'b0),
+        .ctl_addr        (4'hx),
+        .ctl_data        (8'hxx),
         // system clock/reset
         .clk             (clk),
         .clk_p           (clk_p),
