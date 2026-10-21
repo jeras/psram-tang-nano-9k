@@ -70,14 +70,14 @@ module memory_test (
     logic [22-1:0] bus_addr;
     logic [16-1:0] bus_dataw;
     logic [16-1:0] bus_datar;
-    logic          bus_busy;
+    logic          bus_ready;
 
-    psram_controller #(
+    hyperram_phy #(
         // controller configuration
         .FREQUENCY       (FREQUENCY),
         // HyperRAM device configuration
         .INITIAL_LATENCY (LATENCY)
-    ) mem_ctrl (
+    ) phy (
         // control interface (independent from system bus clock/reset)
         .ctl_clk         (1'b0),
         .ctl_rst         (1'b0),
@@ -96,7 +96,7 @@ module memory_test (
         .bus_bytee       (bus_bytee),
         .bus_dataw       (bus_dataw),
         .bus_datar       (bus_datar),
-        .bus_busy        (bus_busy ),
+        .bus_ready       (bus_ready),
         // HyperRAM
         .O_psram_reset_n (O_psram_reset_n[0]),
         .O_psram_ck      (O_psram_ck     [0]),
@@ -201,7 +201,7 @@ module memory_test (
 
         end else if (state == TEST_INIT) begin
             // wait for memory to become ready
-            if (!bus_busy) begin
+            if (bus_ready) begin
                 new_state <= TEST_WRITE;
                 state <= PAUSE;
             end else if (ticks == 5) begin   // 0.5 second timeout
@@ -218,7 +218,7 @@ module memory_test (
                 bus_valid <= 1'b1;
                 bus_write <= 1'b1;
                 bus_dataw <= {`hash(bus_addr), `hash(bus_addr)};
-            end else if (!bus_valid && !bus_busy) begin
+            end else if (~(bus_valid & bus_ready)) begin
                 // write finished
                 cycle <= 0;
                 if (cycle > 4+LATENCY)
@@ -244,7 +244,7 @@ module memory_test (
                 // issue read command
                 bus_valid <= 1'b1;
                 bus_write <= 1'b0;
-            end else if (!bus_valid && !bus_busy) begin
+            end else if ((bus_valid & bus_ready)) begin
                 // read finished
                 cycle <= 0;
                 if (cycle > 10+LATENCY)     // read_is on cycle 1, so cycle==13 means latency is 12
