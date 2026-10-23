@@ -33,13 +33,12 @@ module hyperram_phy_tb #(
         repeat (16) @(posedge sys_clk);
     end
 
-    initial
-    begin
-        // Waveforms
-        $dumpfile("wave.vcd");
-        $dumpvars(0);
-//      $finish;
-    end
+//    initial
+//    begin
+//        // Waveforms
+//        $dumpfile("wave.vcd");
+//        $dumpvars(0);
+//    end
 
 ///////////////////////////////////////////////////////////////////////////////
 // control interface
@@ -90,7 +89,8 @@ module hyperram_phy_tb #(
 ///////////////////////////////////////////////////////////////////////////////
 
     logic          bus_valid;
-    logic          bus_write;
+    logic          bus_read ;
+    logic  [7-1:0] bus_size ;
     logic [22-1:0] bus_addr ;
     logic  [2-1:0] bus_bytee;
     logic [16-1:0] bus_dataw;
@@ -104,7 +104,8 @@ module hyperram_phy_tb #(
 
     // control interface task (read/write)
     task bus_cycle (
-        input  logic [22-1:0] write,
+        input  logic          read ,
+        input  logic  [7-1:0] size ,
         input  logic [22-1:0] addr ,
         input  logic  [2-1:0] bytee,
         input  logic [16-1:0] dataw,
@@ -112,7 +113,8 @@ module hyperram_phy_tb #(
     );
         // start cycle
         bus_valid <= 1'b1;
-        bus_write <= write;
+        bus_read  <= read;
+        bus_size  <= size;
         bus_addr  <= addr;
         // write data and enable
         bus_bytee <= bytee;
@@ -134,9 +136,9 @@ module hyperram_phy_tb #(
         logic [16-1:0] data;
         wait (sys_rstn);
         @(posedge sys_clk);
-        //       write,     address, bytee,    dataw, datar
-        bus_cycle(1'b1, 22'h00_0000, 2'b11, 16'ha5f0, data);
-        bus_cycle(1'b0, 22'h00_0000, 2'bxx, 16'hxxxx, data);
+        //        read, size,     address, bytee,    dataw, datar
+        bus_cycle(1'b0, 7'd0, 22'h00_0000, 2'b11, 16'ha5f0, data);
+        bus_cycle(1'b1, 7'd0, 22'h00_0000, 2'bxx, 16'hxxxx, data);
     end
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -173,7 +175,8 @@ module hyperram_phy_tb #(
         .init_done       (),
         // system bus
         .bus_valid       (bus_valid),
-        .bus_write       (bus_write),
+        .bus_size        (bus_size ),
+        .bus_read        (bus_read ),
         .bus_addr        (bus_addr ),
         .bus_bytee       (bus_bytee),
         .bus_dataw       (bus_dataw),

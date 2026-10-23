@@ -33,7 +33,8 @@ module hyperram_phy #(
     output logic          init_done,  // indicates the end of initialization delay
     // system bus
     input  logic          bus_valid,  // address handshake valid
-    input  logic          bus_write,  // 0: read, 1: write
+    input  logic          bus_read,   // 0: write, 1: read
+    input  logic  [7-1:0] bus_size ,  // transfer size (bus_size+1 <= 128) in half-words
     input  logic [22-1:0] bus_addr ,  // address (bit [0] is ignored)
     input  logic  [2-1:0] bus_bytee,  // byte enable
     input  logic [16-1:0] bus_dataw,  // write data
@@ -188,8 +189,13 @@ module hyperram_phy #(
     logic [32-1:0] fsm_ac_sr;       // address-control shift register
     logic          wait_for_rd_data;
 
+    localparam FIFO_SIZE = 16;
+    localparam FIFO_LOG2 = $clog2(FIFO_SIZE);
+
     // write data FIFO
-    logic [16-1:0] fsm_dataw [0:16-1];
+    logic [2+16-1:0] fifo_data [0:FIFO_SIZE-1];
+    logic [FIFO_LOG2-1:0] fifo_idxw;
+    logic [FIFO_LOG2-1:0] fifo_idxr;
 
     // DQ path multiplexer
     logic [2-1:0] fsm_dq_s;  // select
@@ -216,9 +222,13 @@ module hyperram_phy #(
     assign cfg_idx = 2'b0;
 
     // DQ multiplexer array
-    //                  configuration   , AC (combinational)        , AC (registered)    , write data
-    assign fsm_dq_p = '{0: cfg_dq[15:08], 1: {~bus_write, 7'b010_00}, 2: fsm_ac_sr[31:16], 3: fsm_dataw[07:00]};
-    assign fsm_dq_n = '{0: cfg_dq[07:00], 1: 8'h00                  , 2: fsm_ac_sr[15:00], 3: fsm_dataw[15:08]};
+    //                  configuration   , AC (combinational)      , AC (registered)    , write data
+    assign fsm_dq_p = '{0: cfg_dq[15:08], 1: {bus_read, 7'b010_00}, 2: fsm_ac_sr[31:16], 3: fifo_data[fifo_idxr][07:00]};
+    assign fsm_dq_n = '{0: cfg_dq[07:00], 1: 8'h00                , 2: fsm_ac_sr[15:00], 3: fifo_data[fifo_idxr][15:08]};
+
+    // RWDS
+    assign sdr_rwds_o_p = fifo_data[fifo_idxr][17];
+    assign sdr_rwds_o_n = fifo_data[fifo_idxr][18];
 
     // DQ multiplexer
     assign sdr_dq_o_p = fsm_dq_p[fsm_dq_s];
@@ -248,13 +258,10 @@ module hyperram_phy #(
         fsm_cycle        <= 0;
         fsm_extended     <= 1'b0;
         fsm_ac_sr        <= '0;
-        fsm_dataw        <= 0;
         wait_for_rd_data <= 1'b0;
         // DDR input output
         sdr_ck_e     <= 0;
         sdr_cs_n     <= 1;
-        sdr_rwds_o_p <= 1'b0;
-        sdr_rwds_o_n <= 1'b0;
         sdr_rwds_t   <= 1'b1;
         sdr_dq_t     <= 1'b1;
     end else begin
@@ -283,12 +290,11 @@ module hyperram_phy #(
             sdr_rwds_t <= 1;
             if (bus_transfer) begin
                 // start read/write operation
-                fsm_state <= bus_write ? FSM_WRITE : FSM_READ;
+                fsm_state <= bus_read ? FSM_READ : FSM_WRITE;
                 fsm_ac_sr <= {bus_addr[21:4], 13'b0, bus_addr[3:1], 16'b0000_0100_1101_0100};
                 sdr_ck_e <= 1;
                 sdr_cs_n <= 0;
                 wait_for_rd_data <= 0;
-                fsm_dataw <= bus_dataw;
             end
         end
         FSM_READ: begin
@@ -316,8 +322,6 @@ module hyperram_phy #(
             // If it is low, data starts at 2+LATENCY. If high, then data starts at 2+LATENCY*2.
             if (fsm_extended ? (fsm_cycle == 1+INITIAL_LATENCY*2) : (fsm_cycle == 1+INITIAL_LATENCY))
             begin
-                sdr_rwds_o_p <= ~bus_bytee[0];
-                sdr_rwds_o_n <= ~bus_bytee[1];
             end
             if (fsm_extended ? (fsm_cycle == 2+INITIAL_LATENCY*2) : (fsm_cycle == 2+INITIAL_LATENCY))
             begin
@@ -340,8 +344,49 @@ module hyperram_phy #(
 // system bus
 ///////////////////////////////////////////////////////////////////////////////
 
+    logic [7-1:0] bus_cntw_reg;
+    logic [7-0:0] bus_cntw_nxt;
+    logic         bus_cntw_end;
+
     // address handshake transfer
     assign bus_transfer = bus_valid & bus_ready;
+
+    // write data counter
+    always_ff @(posedge clk, negedge rstn)
+    if (~rstn) begin
+        bus_cntw_reg <= 7'd0;
+    end else begin
+        if (bus_transfer) begin
+            bus_cntw_reg <= bus_size;
+        end else if (~bus_cntw_end) begin
+            bus_cntw_reg <= bus_cntw_nxt[6:0];
+        end
+    end
+
+    assign bus_cntw_nxt = {1'b0, bus_cntw_reg} - 'd1;
+    assign bus_cntw_end = bus_cntw_nxt[7];
+
+    // write data FIFO write index
+    always_ff @(posedge clk, negedge rstn)
+    if (~rstn) begin
+        fifo_idxw <= 'd0;
+    end else begin
+        if (bus_cntw_end) begin
+            fifo_idxw <= 'd0;
+        end else if (bus_transfer | ~bus_cntw_end) begin
+            fifo_idxw <= fifo_idxw + 'd1;
+        end
+    end
+
+    // write data FIFO read index
+    // TODO
+    assign fifo_idxr = 'd0;
+        
+    // write data FIFO data
+    always_ff @(posedge clk)
+    if ((bus_transfer & ~bus_read) | ~bus_cntw_end) begin
+        fifo_data[fifo_idxw] <= {bus_bytee, bus_dataw};
+    end
 
     // read data
     assign bus_datar = {sdr_dq_i_p, sdr_dq_i_n};
