@@ -1,7 +1,8 @@
 `timescale 1ns/1ps
 
 module hyperram_phy_tb #(
-    parameter int FREQUENCY = 83_000_000,
+//  parameter int FREQUENCY = 83_000_000,
+    parameter int FREQUENCY = 81_000_000,
     parameter int LATENCY = 3
 );
 

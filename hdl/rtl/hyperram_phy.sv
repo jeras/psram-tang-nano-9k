@@ -174,28 +174,27 @@ module hyperram_phy #(
 // HyperRAM FSM
 ///////////////////////////////////////////////////////////////////////////////
 
-    localparam [2-1:0] FSM_INIT   = 2'b00;
-    localparam [2-1:0] FSM_IDLE   = 2'b01;
-    localparam [2-1:0] FSM_READ   = 2'b10;
-    localparam [2-1:0] FSM_WRITE  = 2'b11;
-
     // system bus signals
     wire           bus_transfer;
 
     // FSM signals
-    logic  [2-1:0] fsm_state;
-    logic  [8-1:0] fsm_cycle;       // cycle counter
+    logic          fsm_cycle;
+    logic          fsm_config;
+    logic          fsm_write;
+    logic          fsm_read;
+    logic  [8-1:0] fsm_cnt;       // cycle counter
+    logic          fsm_last;
     logic          fsm_extended;
     logic [32-1:0] fsm_ac_sr;       // address-control shift register
-    logic          wait_for_rd_data;
 
     localparam FIFO_SIZE = 16;
     localparam FIFO_LOG2 = $clog2(FIFO_SIZE);
 
     // write data FIFO
-    logic [2+16-1:0] fifo_data [0:FIFO_SIZE-1];
-    logic [FIFO_LOG2-1:0] fifo_idxw;
-    logic [FIFO_LOG2-1:0] fifo_idxr;
+    logic [2+16-1:0] fifo_mem [0:FIFO_SIZE-1];
+    logic [2+16-1:0] fifo_data;
+    logic [FIFO_LOG2-1:0] fifo_idx_i;
+    logic [FIFO_LOG2-1:0] fifo_idx_o;
 
     // DQ path multiplexer
     logic [2-1:0] fsm_dq_s;  // select
@@ -218,17 +217,17 @@ module hyperram_phy #(
     wire  [8-1:0] sdr_dq_i_n;
 
     // configuration memory addressing
-    assign cfg_cnt = fsm_cycle[1:0];
+    assign cfg_cnt = fsm_cnt[1:0];
     assign cfg_idx = 2'b0;
+
+    // RWDS
+    assign sdr_rwds_o_p = fifo_data[16];
+    assign sdr_rwds_o_n = fifo_data[17];
 
     // DQ multiplexer array
     //                  configuration   , AC (combinational)      , AC (registered)    , write data
-    assign fsm_dq_p = '{0: cfg_dq[15:08], 1: {bus_read, 7'b010_00}, 2: fsm_ac_sr[31:16], 3: fifo_data[fifo_idxr][07:00]};
-    assign fsm_dq_n = '{0: cfg_dq[07:00], 1: 8'h00                , 2: fsm_ac_sr[15:00], 3: fifo_data[fifo_idxr][15:08]};
-
-    // RWDS
-    assign sdr_rwds_o_p = fifo_data[fifo_idxr][17];
-    assign sdr_rwds_o_n = fifo_data[fifo_idxr][18];
+    assign fsm_dq_p = '{0: cfg_dq[15:08], 1: {bus_read, 7'b010_00}, 2: fsm_ac_sr[31:16], 3: fifo_data[07:00]};
+    assign fsm_dq_n = '{0: cfg_dq[07:00], 1: 8'h00                , 2: fsm_ac_sr[15:00], 3: fifo_data[15:08]};
 
     // DQ multiplexer
     assign sdr_dq_o_p = fsm_dq_p[fsm_dq_s];
@@ -236,102 +235,97 @@ module hyperram_phy #(
 
     // DQ multiplexer select
     always_comb begin
-        if (fsm_state == FSM_INIT)  fsm_dq_s = 2'd0;  // configuration
-        else if (bus_transfer)      fsm_dq_s = 2'd1;  // AC (combinational)
-        else if (fsm_cycle < 4)     fsm_dq_s = 2'd2;  // AC (registered)
-        else                        fsm_dq_s = 2'd3;  // write data
+        if      (fsm_config)    fsm_dq_s = 2'd0;  // configuration
+        else if (bus_transfer)  fsm_dq_s = 2'd1;  // AC (combinational)
+        else if (fsm_cnt < 4)   fsm_dq_s = 2'd2;  // AC (registered)
+        else                    fsm_dq_s = 2'd3;  // write data
     end
+
+//    // DQ multiplexer select
+//    always_ff @(posedge clk)
+//    if (~rstn) begin
+//        fsm_dq_s <= 2'd0;  // configuration
+//    end else begin
+//        if (fsm_cycle == FSM_INIT)  fsm_dq_s <= 2'd0;  // configuration
+//        else if (bus_transfer)      fsm_dq_s <= 2'd1;  // AC (combinational)
+//        else if (fsm_cnt < 4)     fsm_dq_s <= 2'd2;  // AC (registered)
+//        else                        fsm_dq_s <= 2'd3;  // write data
+//    end
 
     // SDR signals
 //    always_comb begin
-//        if (((fsm_state == FSM_INIT) & init_done) | ((fsm_state == FSM_IDLE) & bus_transfer)) begin
+//        if (((fsm_cycle == FSM_INIT) & init_done) | ((fsm_cycle == FSM_IDLE) & bus_transfer)) begin
 //            sdr_ck_e <= 1;      // this needs to be earlier 1 cycle to allow for phase shifted clk_ck
 //            sdr_cs_n <= 0;
 //            sdr_dq_t <= 0;
-//    end    
+//    end
+
+    // FSM last
+    always_comb
+    if (fsm_config) begin
+        fsm_last = fsm_cnt[1:0] == 2'd3;
+    end else begin
+        fsm_last = fsm_extended ? (fsm_cnt == 2+INITIAL_LATENCY*2) : (fsm_cnt == 2+INITIAL_LATENCY);
+    end
+
+    // SDR CK CS#
+    always_comb begin
+        sdr_ck_e   =   init_pulse | bus_transfer | fsm_cycle & ~fsm_last;
+        sdr_cs_n   = ~(init_pulse | bus_transfer | fsm_cycle & ~fsm_last);
+        sdr_dq_t   = ~(init_pulse | bus_transfer | fsm_cycle & ~fsm_last);
+    end
+
+//                if (fsm_extended ? (fsm_cnt == 1+INITIAL_LATENCY*2) : (fsm_cnt == 1+INITIAL_LATENCY)) begin
+//                sdr_dq_t <= 1'b0;
+//                sdr_rwds_t <= 1'b0;
 
     // Main FSM for HyperRAM read/write
     always @(posedge clk)
     if (~rstn) begin
         // FSM
-        fsm_state        <= FSM_INIT;
-        fsm_cycle        <= 0;
+        fsm_cycle        <= 1'b0;
+        fsm_config       <= 1'b0;
+        fsm_write        <= 1'b0;
+        fsm_read         <= 1'b0;
+        fsm_cnt          <= 0;
         fsm_extended     <= 1'b0;
         fsm_ac_sr        <= '0;
-        wait_for_rd_data <= 1'b0;
-        // DDR input output
-        sdr_ck_e     <= 0;
-        sdr_cs_n     <= 1;
-        sdr_rwds_t   <= 1'b1;
-        sdr_dq_t     <= 1'b1;
     end else begin
+        // FSM counter
+        if (fsm_last)  fsm_cnt <= 'd0;
+        else           fsm_cnt <= fsm_cnt + fsm_cycle;
         // sample RWDS to see if additional latency is requested
-        if (fsm_cycle == 5) begin
+        if (fsm_cnt == 5) begin
             fsm_extended <= sdr_rwds_i_n;
         end
+        // before read data becomes valid, copy ...
+        if (fsm_cnt == 8)  fsm_read <= ~fsm_write;
 
-        unique0 case (fsm_state)
-        FSM_INIT: begin
-            if (init_pulse) begin
-                sdr_ck_e <= 1;      // this needs to be earlier 1 cycle to allow for phase shifted clk_ck
-                sdr_cs_n <= 0;
-                sdr_dq_t <= 0;
-            end else if (init_done) begin
-                fsm_cycle <= fsm_cycle + 1;
-                if (fsm_cycle == 3) begin
-                    fsm_state <= FSM_IDLE;
-                    fsm_cycle <= 24'b0;
-                    sdr_ck_e <= 0;
-                    sdr_cs_n <= 1;
-                end
+        // IDLE
+        if (~fsm_cycle) begin
+            if (init_pulse | bus_transfer) begin
+                fsm_cycle  <= 1'b1;
+                fsm_config <= init_pulse;
             end
-        end
-        FSM_IDLE: begin
-            sdr_rwds_t <= 1;
             if (bus_transfer) begin
-                // start read/write operation
-                fsm_state <= bus_read ? FSM_READ : FSM_WRITE;
+                fsm_write <= bus_read;
+                fsm_read  <= 1'b0;
                 fsm_ac_sr <= {bus_addr[21:4], 13'b0, bus_addr[3:1], 16'b0000_0100_1101_0100};
-                sdr_ck_e <= 1;
-                sdr_cs_n <= 0;
-                wait_for_rd_data <= 0;
             end
         end
-        FSM_READ: begin
-            fsm_cycle <= fsm_cycle + 1;
+        // CYCLE
+        else begin
+            if (fsm_last) begin
+                fsm_cycle  <= 1'b0;
+                fsm_config <= 1'b0;
+                fsm_write  <= 1'b0;
+                fsm_read   <= 1'b0;
+            end
             fsm_ac_sr <= {fsm_ac_sr[31:0], 16'b0};
-            if (fsm_cycle == INITIAL_LATENCY) begin
-                sdr_dq_t <= 1'b1;
-            end
-            if (fsm_cycle == 8)
-                wait_for_rd_data <= 1;
-            if (wait_for_rd_data && (sdr_rwds_i_p ^ sdr_rwds_i_n)) begin     // sample rwds falling edge to get a word / \_
-                sdr_cs_n <= 1;
-                sdr_ck_e <= 0;
-                fsm_state <= FSM_IDLE;
-                fsm_cycle <= 0;
-            end
+//            if (fsm_cnt == INITIAL_LATENCY) begin
+//                sdr_dq_t <= 1'b1;
+//            end
         end
-        FSM_WRITE: begin
-            fsm_cycle <= fsm_cycle + 1;
-            fsm_ac_sr <= {fsm_ac_sr[31:0], 16'b0};
-            if (fsm_cycle == INITIAL_LATENCY) begin
-                sdr_dq_t <= 1'b0;
-                sdr_rwds_t <= 0;
-            end
-            // If it is low, data starts at 2+LATENCY. If high, then data starts at 2+LATENCY*2.
-            if (fsm_extended ? (fsm_cycle == 1+INITIAL_LATENCY*2) : (fsm_cycle == 1+INITIAL_LATENCY))
-            begin
-            end
-            if (fsm_extended ? (fsm_cycle == 2+INITIAL_LATENCY*2) : (fsm_cycle == 2+INITIAL_LATENCY))
-            begin
-                fsm_state <= FSM_IDLE;
-                fsm_cycle <= 0;
-                sdr_ck_e <= 0;
-                sdr_cs_n <= 1;
-            end
-        end
-        endcase
     end
 
     // delayed SDR clock
@@ -369,29 +363,36 @@ module hyperram_phy #(
     // write data FIFO write index
     always_ff @(posedge clk, negedge rstn)
     if (~rstn) begin
-        fifo_idxw <= 'd0;
+        fifo_idx_i <= 'd0;
     end else begin
         if (bus_cntw_end) begin
-            fifo_idxw <= 'd0;
+            fifo_idx_i <= 'd0;
         end else if (bus_transfer | ~bus_cntw_end) begin
-            fifo_idxw <= fifo_idxw + 'd1;
+            fifo_idx_i <= fifo_idx_i + 'd1;
         end
     end
 
-    // write data FIFO read index
-    // TODO
-    assign fifo_idxr = 'd0;
-        
-    // write data FIFO data
+    // FIFO input data write
     always_ff @(posedge clk)
     if ((bus_transfer & ~bus_read) | ~bus_cntw_end) begin
-        fifo_data[fifo_idxw] <= {bus_bytee, bus_dataw};
+        fifo_mem[fifo_idx_i] <= {bus_bytee, bus_dataw};
     end
 
-    // read data
+    // FIFO output data index
+    // TODO
+    assign fifo_idx_o = 'd0;
+
+    // FIFO output data read
+    // TODO: registered?
+    assign fifo_data = fifo_mem[fifo_idx_o];
+
+    // system bus read data
     assign bus_datar = {sdr_dq_i_p, sdr_dq_i_n};
 
-    assign bus_ready = (fsm_state == FSM_IDLE);
+    // system bus read data pulse
+    assign bus_pulse = fsm_read & (sdr_rwds_i_p ^ sdr_rwds_i_n);
+
+    assign bus_ready = ~fsm_cycle & init_done;
 
 ///////////////////////////////////////////////////////////////////////////////
 // HyperRAM RESET# output
