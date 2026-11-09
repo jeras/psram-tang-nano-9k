@@ -513,7 +513,8 @@ module hyperram_phy #(
     wire [7:0] ddr_dq_d;  // IO input delay
 
     genvar i;
-    generate for (i=0; i<=7; i++) begin: dq
+    generate
+    for (i=0; i<=7; i++) begin: dq
 
         ODDR #(.TXCLK_POL (1'b1)) oddr_dq (
             .Q0  (ddr_dq_o      [i]),
@@ -549,6 +550,7 @@ module hyperram_phy #(
             .CLK (clk)
         );
 
-    end endgenerate
+    end: dq
+    endgenerate
 
 endmodule: hyperram_phy
