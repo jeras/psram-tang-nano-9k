@@ -4,13 +4,13 @@
 
 module hyperram_cache #(
     // system bus and memory parameters
-    parameter int unsigned ADDR_WIDTH = 26,            // 64MB address space by default
-    parameter int unsigned DATA_WIDTH = 32,            // 16/32/64-bit system bus
-    parameter int unsigned BYTE_WIDTH = DATA_WIDTH/8,  // word size in bytes
+    parameter  int unsigned ADDR_WIDTH = 26,            // 64MB address space by default
+    parameter  int unsigned DATA_WIDTH = 32,            // 16/32/64-bit system bus
+    localparam int unsigned BYTE_WIDTH = DATA_WIDTH/8,  // word size in bytes
     // cache parameters
-    parameter int unsigned ASSOCIATIVITY = 1,        // options are 1/2/4
-    parameter int unsigned CACHE_SIZE = 1024*4,      // cache size in bytes
-    parameter int unsigned LINE_SIZE = 128,          // line size in bytes
+    parameter  int unsigned ASSOCIATIVITY = 1,        // options are 1/2/4
+    parameter  int unsigned CACHE_SIZE = 1024*4,      // cache size in bytes
+    parameter  int unsigned LINE_SIZE = 128           // line size in bytes
 )(
     // system signals
     input  logic clk,
@@ -143,7 +143,7 @@ module hyperram_cache #(
             mem_dirty[ctl_index] <= ctl_dirty;
             mem_tag  [ctl_index] <= ctl_tag  ;
         end
-                
+
     end: block
     endgenerate
 
@@ -170,13 +170,11 @@ module hyperram_cache #(
     localparam             FSM_FETCH = 2'b10;
     localparam             FSM_WBACK = 2'b11;
 
-    logic 
-
     // TODO: a FSM for clearing the VALID bit from tag memory is needed for ASIC implementations
     // tag
     always_ff @(posedge clk, posedge rst)
     if (rst) begin
-        // require invalidation sequence after reset 
+        // require invalidation sequence after reset
         fsm_state <= 2'b00;
         fsm_index <=  'd0;
     end else begin
@@ -195,11 +193,10 @@ module hyperram_cache #(
                     fsm_state <= FSM_INIT;
                 end
                 if (bus_req_valid & ~hit) begin
-                    fsm_state <= 
+                    fsm_state <= bus_req_write ? FSM_WRITE : FSM_READ;
                 end
-                
             end
-            
+        endcase
     end
 
     // index counter increment
@@ -209,23 +206,7 @@ module hyperram_cache #(
 // memory PHY interface
 ///////////////////////////////////////////////////////////////////////////////
 
-    input  logic                  phy_clk,
-    input  logic                  phy_rst,
-    // memory PHY interface: request
-    output logic                  phy_req_valid,
-    output logic                  phy_req_read ,
-    output logic [ADDR_WIDTH-1:0] phy_req_addr ,
-    output logic [BYTE_WIDTH-1:0] phy_req_byte ,
-    input  logic                  phy_req_ready,
-    // memory PHY interface: write data
-    output logic [DATA_WIDTH-1:0] phy_wdt_data ,
-    input  logic                  phy_wdt_ready,
-    // memory PHY interface: read data
-    input  logic [DATA_WIDTH-1:0] phy_rdt_data ,
-    input  logic                  phy_rdt_valid
 
-    always_ff @(posedge clk)
-    if (bus_req_valid & ~hit)
 
 ///////////////////////////////////////////////////////////////////////////////
 // system bus

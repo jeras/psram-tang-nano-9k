@@ -24,19 +24,21 @@ module hyperram_phy_model #(
     // system clock
     input  logic                  clk,
     // PHY interface: request
-    input  logic                  bus_req_valid,  // address handshake valid
-    input  logic                  bus_req_type ,  // burst type 0: wrapped, 1: linear
-    input  logic                  bus_req_read ,  // 0: write, 1: read
-    input  logic [SIZE_WIDTH-1:0] bus_req_size ,  // transfer size (bus_req_size+1) in 16 bit words
-    input  logic [ADDR_WIDTH-1:0] bus_req_addr ,  // address (bit [0] is ignored)
-    output logic                  bus_req_ready,  // address handshake ready
+    input  logic                  phy_req_valid,  // request handshake valid
+    input  logic                  phy_req_type ,  // burst type 0: wrapped, 1: linear
+    input  logic                  phy_req_read ,  // 0: write, 1: read
+    input  logic [SIZE_WIDTH-1:0] phy_req_size ,  // transfer size (phy_req_size+1) in 16 bit words
+    input  logic [ADDR_WIDTH-1:0] phy_req_addr ,  // word (16-bit) address
+    output logic                  phy_req_ready,  // request handshake ready
     // memory PHY interface: write data
-    input  logic [BYTE_WIDTH-1:0] bus_wdt_byte ,  // byte enable
-    input  logic [DATA_WIDTH-1:0] bus_wdt_data ,  // write data
-    output logic                  bus_wdt_ready,  // ready to accept write data
+    input  logic [BYTE_WIDTH-1:0] phy_wdt_byte ,  // byte enable
+    input  logic [DATA_WIDTH-1:0] phy_wdt_data ,  // write data
+    input  logic                  phy_wdt_valid,  // valid write data is available (active clock stop)
+    output logic                  phy_wdt_ready,  // ready to accept write data
     // memory PHY interface: read data
-    output logic [DATA_WIDTH-1:0] bus_rdt_data ,  // read data (byte enable is ignored)
-    output logic                  bus_rdt_valid   // valid read data on output
+    output logic [DATA_WIDTH-1:0] phy_rdt_data ,  // read data (byte enable is ignored)
+    output logic                  phy_rdt_strb ,  // strobe read data word
+    input  logic                  phy_rdt_pause   // pause data strobes after ODDR delay (active clock stop)
 );
 
     // FSM parameters
@@ -53,13 +55,13 @@ module hyperram_phy_model #(
     logic [ADDR_WIDTH-1:0] fsm_addr;
 
     // interface signals
-    logic bus_req_transfer;
- 
+    logic phy_req_transfer;
+
     // model memory
     logic [8-1:0] mem [0:2**ADDR_WIDTH-1];
 
     // interface handshake transfer
-    assign bus_req_transfer = bus_req_valid & bus_req_ready;
+    assign phy_req_transfer = phy_req_valid & phy_req_ready;
 
     // initialization to an idle state
     // TODO: memory initialization
@@ -69,26 +71,26 @@ module hyperram_phy_model #(
         fsm_delay <= 0;
         fsm_cnt   <= 0;
         // interface
-        bus_req_ready <= 1'b0;
-        bus_wdt_ready <= 1'b0;
-        bus_rdt_valid <= 1'b0;
+        phy_req_ready <= 1'b0;
+        phy_wdt_ready <= 1'b0;
+        phy_rdt_strb  <= 1'b0;
     end
 
     always_ff @(posedge clk)
     case (fsm_state)
         FSM_IDLE: begin
             if (fsm_delay == IDLE_DELAY) begin
-                bus_req_ready <= 1'b1;
+                phy_req_ready <= 1'b1;
             end
-            if (bus_req_transfer) begin
+            if (phy_req_transfer) begin
                 // state
-                fsm_state <= bus_req_read ? FSM_READ : FSM_WRITE;
+                fsm_state <= phy_req_read ? FSM_READ : FSM_WRITE;
                 fsm_delay <= 0;
                 fsm_cnt   <= 0;
                 // request signal copies
-                fsm_read  <= bus_req_read;
-                fsm_size  <= bus_req_size;
-                fsm_addr  <= bus_req_addr;
+                fsm_read  <= phy_req_read;
+                fsm_size  <= phy_req_size;
+                fsm_addr  <= phy_req_addr;
             end else begin
                 fsm_delay <= fsm_delay + 1;
             end
@@ -97,15 +99,15 @@ module hyperram_phy_model #(
             if (fsm_delay > READ_VALID_DELAY) begin
                 if (fsm_cnt < fsm_size) begin
                     // read data interface
-                    bus_rdt_valid <= 1'b1;
-                    bus_rdt_data  <= {mem[fsm_addr+1], mem[fsm_addr]};
+                    phy_rdt_strb  <= 1'b1;
+                    phy_rdt_data  <= {mem[fsm_addr+1], mem[fsm_addr]};
                     // FSM
                     fsm_cnt       <= fsm_cnt + 1;
                     fsm_addr      <= fsm_addr + 'd2;
                 end else begin
                     // read data interface
-                    bus_rdt_valid <= 1'b0;
-                    bus_rdt_data  <= 'x;
+                    phy_rdt_strb  <= 1'b0;
+                    phy_rdt_data  <= 'x;
                     // FSM
                     fsm_state     <= FSM_IDLE;
                     fsm_delay     <= 0;
@@ -116,7 +118,7 @@ module hyperram_phy_model #(
             end
         end
         FSM_WRITE: begin
-            
+
         end
     endcase
 
@@ -126,10 +128,10 @@ module hyperram_phy_model #(
 
         end
         FSM_READ: begin
-            
+
         end
         FSM_WRITE: begin
-            
+
         end
     endcase
 

@@ -34,24 +34,24 @@ module hyperram_phy #(
     // system clock/reset
     input  logic          clk,        // SDR clock
     input  logic          clk_ck,     // phase-shifted clock for driving CK/CK#
-    input  logic          rstn,       // SDR reset
+    input  logic          rst,        // SDR reset
     output logic          init_done,  // indicates the end of initialization delay
     // PHY interface: request
-    input  logic                  bus_req_valid,  // request handshake valid
-    input  logic                  bus_req_type ,  // burst type 0: wrapped, 1: linear
-    input  logic                  bus_req_read ,  // 0: write, 1: read
-    input  logic [SIZE_WIDTH-1:0] bus_req_size ,  // transfer size (bus_req_size+1) in 16 bit words
-    input  logic [ADDR_WIDTH-1:0] bus_req_addr ,  // word (16-bit) address
-    output logic                  bus_req_ready,  // request handshake ready
+    input  logic                  phy_req_valid,  // request handshake valid
+    input  logic                  phy_req_type ,  // burst type 0: wrapped, 1: linear
+    input  logic                  phy_req_read ,  // 0: write, 1: read
+    input  logic [SIZE_WIDTH-1:0] phy_req_size ,  // transfer size (phy_req_size+1) in 16 bit words
+    input  logic [ADDR_WIDTH-1:0] phy_req_addr ,  // word (16-bit) address
+    output logic                  phy_req_ready,  // request handshake ready
     // memory PHY interface: write data
-    input  logic [BYTE_WIDTH-1:0] bus_wdt_byte ,  // byte enable
-    input  logic [DATA_WIDTH-1:0] bus_wdt_data ,  // write data
-    input  logic                  bus_wdt_valid,  // valid write data is available (active clock stop)
-    output logic                  bus_wdt_ready,  // ready to accept write data
+    input  logic [BYTE_WIDTH-1:0] phy_wdt_byte ,  // byte enable
+    input  logic [DATA_WIDTH-1:0] phy_wdt_data ,  // write data
+    input  logic                  phy_wdt_valid,  // valid write data is available (active clock stop)
+    output logic                  phy_wdt_ready,  // ready to accept write data
     // memory PHY interface: read data
-    output logic [DATA_WIDTH-1:0] bus_rdt_data ,  // read data (byte enable is ignored)
-    output logic                  bus_rdt_strb ,  // strobe read data word
-    output logic                  bus_rdt_pause,  // will pause data strobes after a delay (active clock stop)
+    output logic [DATA_WIDTH-1:0] phy_rdt_data ,  // read data (byte enable is ignored)
+    output logic                  phy_rdt_strb ,  // strobe read data word
+    input  logic                  phy_rdt_pause,  // pause data strobes after ODDR delay (active clock stop)
     // HyperRAM physical interface
     output logic        O_psram_reset_n,
     output logic        O_psram_ck,
@@ -75,8 +75,8 @@ module hyperram_phy #(
     logic                    init_underflow;  // counter underflow
     logic                    init_pulse;      // initialization pulse
 
-    always @(posedge clk, negedge rstn)
-    if (~rstn) begin
+    always_ff @(posedge clk, negedge rst)
+    if (rst) begin
         init_counter <= T_VCS_VAL-1;
         init_done    <= 1'b0;
         init_pulse   <= 1'b0;
@@ -188,7 +188,7 @@ module hyperram_phy #(
 ///////////////////////////////////////////////////////////////////////////////
 
     // system bus signals
-    wire           bus_transfer;
+    wire           phy_transfer;
 
     // FSM signals
     logic          fsm_cycle;
@@ -198,7 +198,7 @@ module hyperram_phy #(
     logic  [8-1:0] fsm_cnt;       // cycle counter
     logic          fsm_last;
     logic          fsm_extended;
-    logic [48-1:0] fsm_ac_cmb;   // address-control [47:0] combinational 
+    logic [48-1:0] fsm_ac_cmb;   // address-control [47:0] combinational
     logic [32-1:0] fsm_ac_reg;   // address-control [31:0] shift register
 
     localparam FIFO_SIZE = 16;
@@ -240,7 +240,7 @@ module hyperram_phy #(
 
     // AC field range:   [47]        , [46], [45]        , [44:16]           , [15:3]  , [2:0]
     // AC field name:    R/W#        , AS  , burst type  , address           , reserved, address
-    assign fsm_ac_cmb = {bus_req_read, 1'b0, bus_req_type, bus_req_addr[31:3], 13'b0   , bus_req_addr[2:0]};
+    assign fsm_ac_cmb = {phy_req_read, 1'b0, phy_req_type, phy_req_addr[31:3], 13'b0   , phy_req_addr[2:0]};
 
     // DQ multiplexer array
     //                  configuration   , AC (combinational)  , AC (shift register) , write data
@@ -254,25 +254,25 @@ module hyperram_phy #(
     // DQ multiplexer select
     always_comb begin
         if      (fsm_config)    fsm_dq_s = 2'd0;  // configuration
-        else if (bus_transfer)  fsm_dq_s = 2'd1;  // AC (combinational)
+        else if (phy_transfer)  fsm_dq_s = 2'd1;  // AC (combinational)
         else if (fsm_cnt < 4)   fsm_dq_s = 2'd2;  // AC (registered)
         else                    fsm_dq_s = 2'd3;  // write data
     end
 
 //    // DQ multiplexer select
 //    always_ff @(posedge clk)
-//    if (~rstn) begin
+//    if (rst) begin
 //        fsm_dq_s <= 2'd0;  // configuration
 //    end else begin
 //        if (fsm_cycle == FSM_INIT)  fsm_dq_s <= 2'd0;  // configuration
-//        else if (bus_transfer)      fsm_dq_s <= 2'd1;  // AC (combinational)
+//        else if (phy_transfer)      fsm_dq_s <= 2'd1;  // AC (combinational)
 //        else if (fsm_cnt < 4)     fsm_dq_s <= 2'd2;  // AC (registered)
 //        else                        fsm_dq_s <= 2'd3;  // write data
 //    end
 
     // SDR signals
 //    always_comb begin
-//        if (((fsm_cycle == FSM_INIT) & init_done) | ((fsm_cycle == FSM_IDLE) & bus_transfer)) begin
+//        if (((fsm_cycle == FSM_INIT) & init_done) | ((fsm_cycle == FSM_IDLE) & phy_transfer)) begin
 //            sdr_ck_e <= 1;      // this needs to be earlier 1 cycle to allow for phase shifted clk_ck
 //            sdr_cs_n <= 0;
 //            sdr_dq_t <= 0;
@@ -288,9 +288,9 @@ module hyperram_phy #(
 
     // SDR CK CS#
     always_comb begin
-        sdr_ck_e   =   init_pulse | bus_transfer | fsm_cycle & ~fsm_last;
-        sdr_cs_n   = ~(init_pulse | bus_transfer | fsm_cycle & ~fsm_last);
-        sdr_dq_t   = ~(init_pulse | bus_transfer | fsm_cycle & ~fsm_last);
+        sdr_ck_e   =   init_pulse | phy_transfer | fsm_cycle & ~fsm_last;
+        sdr_cs_n   = ~(init_pulse | phy_transfer | fsm_cycle & ~fsm_last);
+        sdr_dq_t   = ~(init_pulse | phy_transfer | fsm_cycle & ~fsm_last);
     end
 
 //                if (fsm_extended ? (fsm_cnt == 1+INITIAL_LATENCY*2) : (fsm_cnt == 1+INITIAL_LATENCY)) begin
@@ -298,8 +298,8 @@ module hyperram_phy #(
 //                sdr_rwds_t <= 1'b0;
 
     // Main FSM for HyperRAM read/write
-    always @(posedge clk)
-    if (~rstn) begin
+    always_ff @(posedge clk)
+    if (rst) begin
         // FSM
         fsm_cycle        <= 1'b0;
         fsm_config       <= 1'b0;
@@ -321,12 +321,12 @@ module hyperram_phy #(
 
         // IDLE
         if (~fsm_cycle) begin
-            if (init_pulse | bus_transfer) begin
+            if (init_pulse | phy_transfer) begin
                 fsm_cycle  <= 1'b1;
                 fsm_config <= init_pulse;
             end
-            if (bus_transfer) begin
-                fsm_write <= bus_req_read;
+            if (phy_transfer) begin
+                fsm_write <= phy_req_read;
                 fsm_read  <= 1'b0;
                 fsm_ac_reg <= fsm_ac_cmb[31:0];
             end
@@ -348,52 +348,52 @@ module hyperram_phy #(
 
     // delayed SDR clock
     // TODO: maybe driving this on the clock negative edge would make sense
-    always @(posedge ~clk)
-    if (~rstn)  sdr_ck_e_dly <= 1'b0;
+    always_ff @(posedge ~clk)
+    if (rst)  sdr_ck_e_dly <= 1'b0;
     else        sdr_ck_e_dly <= sdr_ck_e;
 
 ///////////////////////////////////////////////////////////////////////////////
 // system bus
 ///////////////////////////////////////////////////////////////////////////////
 
-    logic [7-1:0] bus_cntw_reg;
-    logic [7-0:0] bus_cntw_nxt;
-    logic         bus_cntw_end;
+    logic [7-1:0] phy_cntw_reg;
+    logic [7-0:0] phy_cntw_nxt;
+    logic         phy_cntw_end;
 
     // request handshake transfer
-    assign bus_transfer = bus_req_valid & bus_req_ready;
+    assign phy_transfer = phy_req_valid & phy_req_ready;
 
     // write data counter
-    always_ff @(posedge clk, negedge rstn)
-    if (~rstn) begin
-        bus_cntw_reg <= 7'd0;
+    always_ff @(posedge clk, negedge rst)
+    if (rst) begin
+        phy_cntw_reg <= 7'd0;
     end else begin
-        if (bus_transfer) begin
-            bus_cntw_reg <= bus_req_size;
-        end else if (~bus_cntw_end) begin
-            bus_cntw_reg <= bus_cntw_nxt[6:0];
+        if (phy_transfer) begin
+            phy_cntw_reg <= phy_req_size;
+        end else if (~phy_cntw_end) begin
+            phy_cntw_reg <= phy_cntw_nxt[6:0];
         end
     end
 
-    assign bus_cntw_nxt = {1'b0, bus_cntw_reg} - 'd1;
-    assign bus_cntw_end = bus_cntw_nxt[7];
+    assign phy_cntw_nxt = {1'b0, phy_cntw_reg} - 'd1;
+    assign phy_cntw_end = phy_cntw_nxt[7];
 
     // write data FIFO write index
-    always_ff @(posedge clk, negedge rstn)
-    if (~rstn) begin
+    always_ff @(posedge clk, negedge rst)
+    if (rst) begin
         fifo_idx_i <= 'd0;
     end else begin
-        if (bus_cntw_end) begin
+        if (phy_cntw_end) begin
             fifo_idx_i <= 'd0;
-        end else if (bus_transfer | ~bus_cntw_end) begin
+        end else if (phy_transfer | ~phy_cntw_end) begin
             fifo_idx_i <= fifo_idx_i + 'd1;
         end
     end
 
     // FIFO input data write
     always_ff @(posedge clk)
-    if ((bus_transfer & ~bus_req_read) | ~bus_cntw_end) begin
-        fifo_mem[fifo_idx_i] <= {bus_wdt_byte, bus_wdt_data};
+    if ((phy_transfer & ~phy_req_read) | ~phy_cntw_end) begin
+        fifo_mem[fifo_idx_i] <= {phy_wdt_byte, phy_wdt_data};
     end
 
     // FIFO output data index
@@ -405,20 +405,36 @@ module hyperram_phy #(
     assign fifo_data = fifo_mem[fifo_idx_o];
 
     // system bus read data
-    assign bus_rdt_data = {sdr_dq_i_p, sdr_dq_i_n};
+    assign phy_rdt_data = {sdr_dq_i_p, sdr_dq_i_n};
 
     // system bus read data pulse
-    assign bus_pulse = fsm_read & (sdr_rwds_i_p ^ sdr_rwds_i_n);
+    assign phy_pulse = fsm_read & (sdr_rwds_i_p ^ sdr_rwds_i_n);
 
-    assign bus_req_ready = ~fsm_cycle & init_done;
+    assign phy_req_ready = ~fsm_cycle & init_done;
 
 ///////////////////////////////////////////////////////////////////////////////
 // HyperRAM RESET# output
 ///////////////////////////////////////////////////////////////////////////////
 
+    logic sdr_reset_n;
+    logic ddr_reset_n_o;
+
+    always_ff @(posedge clk, posedge rst)
+    if (rst)  sdr_reset_n <= 1'b0;
+    else      sdr_reset_n <= 1'b1;
+
+    ODDR oddr_rst (
+        .Q0  (ddr_reset_n_o),
+        .Q1  (),
+        .D0  (sdr_reset_n),
+        .D1  (sdr_reset_n),
+        .TX  (1'b1),
+        .CLK (clk)
+    );
+
     OBUF obuf_reset_n (
         .O   (O_psram_reset_n),
-        .I   (rstn)
+        .I   (ddr_reset_n_o)
     );
 
 ///////////////////////////////////////////////////////////////////////////////
