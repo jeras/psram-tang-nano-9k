@@ -33,9 +33,9 @@ module hyperram_cache #(
     output logic                  phy_req_valid,
     output logic                  phy_req_read ,
     output logic [ADDR_WIDTH-1:0] phy_req_addr ,
-    output logic [BYTE_WIDTH-1:0] phy_req_byte ,
     input  logic                  phy_req_ready,
     // memory PHY interface: write data
+    output logic [BYTE_WIDTH-1:0] phy_req_byte ,
     output logic [DATA_WIDTH-1:0] phy_wdt_data ,
     input  logic                  phy_wdt_ready,
     // memory PHY interface: read data
@@ -168,7 +168,7 @@ module hyperram_cache #(
     localparam bit [2-1:0] FSM_WRITE = 2'b10;
     localparam bit [2-1:0] FSM_READ  = 2'b11;
     localparam             FSM_FETCH = 2'b10;
-    localparam             FSM_ESPUNGE;
+    localparam             FSM_WBACK = 2'b11;
 
     logic 
 

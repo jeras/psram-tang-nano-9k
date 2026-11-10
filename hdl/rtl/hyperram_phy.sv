@@ -10,15 +10,20 @@
 
 module hyperram_phy #(
     // controller configuration
-    parameter FREQUENCY=81_000_000,  // system clock frequency (integer Hz units)
+    parameter  int    FREQUENCY            = 81_000_000,  // system clock frequency (integer Hz units)
     // HyperRAM configuration (parameter defaults are also HyperRAM device defaults)
-    parameter string DRIVE_STRENGTH       = "34ohm",
-    parameter int    INITIAL_LATENCY      = 7,
-    parameter bit    FIXED_LATENCY_ENABLE = 1'b1,
-    parameter bit    HYBRID_BURST_ENABLE  = 1'b1,
-    parameter int    BURST_LENGTH         = 32,
-    parameter bit    MASTER_CLOCK_TYPE    = 1'b1
-    // NOTE: there are more detailed comments in the code below
+    parameter  string DRIVE_STRENGTH       = "34ohm",
+    parameter  int    INITIAL_LATENCY      = 7,
+    parameter  bit    FIXED_LATENCY_ENABLE = 1'b1,
+    parameter  bit    HYBRID_BURST_ENABLE  = 1'b1,
+    parameter  int    BURST_LENGTH         = 32,
+    parameter  bit    MASTER_CLOCK_TYPE    = 1'b1,
+    // PYH interface parameters
+    parameter  int    SIZE_WIDTH           = $clog2(BURST_LENGTH),  // can be larger
+    parameter  int    ADDR_WIDTH           = 32,
+    parameter  int    DATA_WIDTH           = 16,
+    localparam int    BYTE_WIDTH           = DATA_WIDTH/8
+    // NOTE: there are more detailed comments about parameters in the code below
 )(
     // control interface
     input  logic          ctl_clk,    // clock (independent from system bus clock)
@@ -31,15 +36,22 @@ module hyperram_phy #(
     input  logic          clk_ck,     // phase-shifted clock for driving CK/CK#
     input  logic          rstn,       // SDR reset
     output logic          init_done,  // indicates the end of initialization delay
-    // system bus
-    input  logic          bus_valid,  // address handshake valid
-    input  logic          bus_read,   // 0: write, 1: read
-    input  logic  [7-1:0] bus_size ,  // transfer size (bus_size+1 <= 128) in half-words
-    input  logic [22-1:0] bus_addr ,  // address (bit [0] is ignored)
-    input  logic  [2-1:0] bus_bytee,  // byte enable
-    input  logic [16-1:0] bus_dataw,  // write data
-    output logic [16-1:0] bus_datar,  // read data (byte enable is ignored)
-    output logic          bus_ready,  // address handshake ready
+    // PHY interface: request
+    input  logic                  bus_req_valid,  // request handshake valid
+    input  logic                  bus_req_type ,  // burst type 0: wrapped, 1: linear
+    input  logic                  bus_req_read ,  // 0: write, 1: read
+    input  logic [SIZE_WIDTH-1:0] bus_req_size ,  // transfer size (bus_req_size+1) in 16 bit words
+    input  logic [ADDR_WIDTH-1:0] bus_req_addr ,  // word (16-bit) address
+    output logic                  bus_req_ready,  // request handshake ready
+    // memory PHY interface: write data
+    input  logic [BYTE_WIDTH-1:0] bus_wdt_byte ,  // byte enable
+    input  logic [DATA_WIDTH-1:0] bus_wdt_data ,  // write data
+    input  logic                  bus_wdt_valid,  // valid write data is available (active clock stop)
+    output logic                  bus_wdt_ready,  // ready to accept write data
+    // memory PHY interface: read data
+    output logic [DATA_WIDTH-1:0] bus_rdt_data ,  // read data (byte enable is ignored)
+    output logic                  bus_rdt_strb ,  // strobe read data word
+    output logic                  bus_rdt_pause,  // will pause data strobes after a delay (active clock stop)
     // HyperRAM physical interface
     output logic        O_psram_reset_n,
     output logic        O_psram_ck,
@@ -53,8 +65,8 @@ module hyperram_phy #(
 // generate init_pulse after 150us initialization delay
 ///////////////////////////////////////////////////////////////////////////////
 
-    // T_VCS power voltage (or reset release) to chip select time
-//  localparam T_VCS_VAL = FREQUENCY * 150 / 1000 / 1000;
+    // T_VCS power voltage (or reset release) to chip select time (150us)
+    // WARNING: be careful about integer division rounding errors
     localparam T_VCS_VAL = FREQUENCY / 1000 * 150 / 1000;
     localparam T_VCS_WIDTH = $clog2(T_VCS_VAL-1);
 
@@ -141,6 +153,7 @@ module hyperram_phy #(
     localparam [04:02] CR1_DISTRIBUTED = 2'b01;  // 4us (default)
 
     // configuration sequence memory
+    // TODO: check the burst type bit, Infinieon seems to have preferences
     logic [16-1:0] cfg_mem [0:16-1] = '{
         // Configuration Register 0 Write
         {2'd0, 2'd0}: {8'h60, 8'h00},  // CA[47:32]
@@ -185,14 +198,15 @@ module hyperram_phy #(
     logic  [8-1:0] fsm_cnt;       // cycle counter
     logic          fsm_last;
     logic          fsm_extended;
-    logic [32-1:0] fsm_ac_sr;       // address-control shift register
+    logic [48-1:0] fsm_ac_cmb;   // address-control [47:0] combinational 
+    logic [32-1:0] fsm_ac_reg;   // address-control [31:0] shift register
 
     localparam FIFO_SIZE = 16;
     localparam FIFO_LOG2 = $clog2(FIFO_SIZE);
 
     // write data FIFO
-    logic [2+16-1:0] fifo_mem [0:FIFO_SIZE-1];
-    logic [2+16-1:0] fifo_data;
+    logic [BYTE_WIDTH+DATA_WIDTH-1:0] fifo_mem [0:FIFO_SIZE-1];
+    logic [BYTE_WIDTH+DATA_WIDTH-1:0] fifo_data;
     logic [FIFO_LOG2-1:0] fifo_idx_i;
     logic [FIFO_LOG2-1:0] fifo_idx_o;
 
@@ -224,10 +238,14 @@ module hyperram_phy #(
     assign sdr_rwds_o_p = fifo_data[16];
     assign sdr_rwds_o_n = fifo_data[17];
 
+    // AC field range:   [47]        , [46], [45]        , [44:16]           , [15:3]  , [2:0]
+    // AC field name:    R/W#        , AS  , burst type  , address           , reserved, address
+    assign fsm_ac_cmb = {bus_req_read, 1'b0, bus_req_type, bus_req_addr[31:3], 13'b0   , bus_req_addr[2:0]};
+
     // DQ multiplexer array
-    //                  configuration   , AC (combinational)      , AC (registered)    , write data
-    assign fsm_dq_p = '{0: cfg_dq[15:08], 1: {bus_read, 7'b010_00}, 2: fsm_ac_sr[31:16], 3: fifo_data[07:00]};
-    assign fsm_dq_n = '{0: cfg_dq[07:00], 1: 8'h00                , 2: fsm_ac_sr[15:00], 3: fifo_data[15:08]};
+    //                  configuration   , AC (combinational)  , AC (shift register) , write data
+    assign fsm_dq_p = '{0: cfg_dq[15:08], 1: fsm_ac_cmb[47:40], 2: fsm_ac_reg[31:24], 3: fifo_data[07:00]};
+    assign fsm_dq_n = '{0: cfg_dq[07:00], 1: fsm_ac_cmb[39:32], 2: fsm_ac_reg[23:16], 3: fifo_data[15:08]};
 
     // DQ multiplexer
     assign sdr_dq_o_p = fsm_dq_p[fsm_dq_s];
@@ -289,7 +307,7 @@ module hyperram_phy #(
         fsm_read         <= 1'b0;
         fsm_cnt          <= 0;
         fsm_extended     <= 1'b0;
-        fsm_ac_sr        <= '0;
+        fsm_ac_reg       <= '0;
     end else begin
         // FSM counter
         if (fsm_last)  fsm_cnt <= 'd0;
@@ -308,9 +326,9 @@ module hyperram_phy #(
                 fsm_config <= init_pulse;
             end
             if (bus_transfer) begin
-                fsm_write <= bus_read;
+                fsm_write <= bus_req_read;
                 fsm_read  <= 1'b0;
-                fsm_ac_sr <= {bus_addr[21:4], 13'b0, bus_addr[3:1], 16'b0000_0100_1101_0100};
+                fsm_ac_reg <= fsm_ac_cmb[31:0];
             end
         end
         // CYCLE
@@ -321,7 +339,7 @@ module hyperram_phy #(
                 fsm_write  <= 1'b0;
                 fsm_read   <= 1'b0;
             end
-            fsm_ac_sr <= {fsm_ac_sr[31:0], 16'b0};
+            fsm_ac_reg[31:16] <= fsm_ac_reg[15:0];
 //            if (fsm_cnt == INITIAL_LATENCY) begin
 //                sdr_dq_t <= 1'b1;
 //            end
@@ -342,8 +360,8 @@ module hyperram_phy #(
     logic [7-0:0] bus_cntw_nxt;
     logic         bus_cntw_end;
 
-    // address handshake transfer
-    assign bus_transfer = bus_valid & bus_ready;
+    // request handshake transfer
+    assign bus_transfer = bus_req_valid & bus_req_ready;
 
     // write data counter
     always_ff @(posedge clk, negedge rstn)
@@ -351,7 +369,7 @@ module hyperram_phy #(
         bus_cntw_reg <= 7'd0;
     end else begin
         if (bus_transfer) begin
-            bus_cntw_reg <= bus_size;
+            bus_cntw_reg <= bus_req_size;
         end else if (~bus_cntw_end) begin
             bus_cntw_reg <= bus_cntw_nxt[6:0];
         end
@@ -374,8 +392,8 @@ module hyperram_phy #(
 
     // FIFO input data write
     always_ff @(posedge clk)
-    if ((bus_transfer & ~bus_read) | ~bus_cntw_end) begin
-        fifo_mem[fifo_idx_i] <= {bus_bytee, bus_dataw};
+    if ((bus_transfer & ~bus_req_read) | ~bus_cntw_end) begin
+        fifo_mem[fifo_idx_i] <= {bus_wdt_byte, bus_wdt_data};
     end
 
     // FIFO output data index
@@ -387,12 +405,12 @@ module hyperram_phy #(
     assign fifo_data = fifo_mem[fifo_idx_o];
 
     // system bus read data
-    assign bus_datar = {sdr_dq_i_p, sdr_dq_i_n};
+    assign bus_rdt_data = {sdr_dq_i_p, sdr_dq_i_n};
 
     // system bus read data pulse
     assign bus_pulse = fsm_read & (sdr_rwds_i_p ^ sdr_rwds_i_n);
 
-    assign bus_ready = ~fsm_cycle & init_done;
+    assign bus_req_ready = ~fsm_cycle & init_done;
 
 ///////////////////////////////////////////////////////////////////////////////
 // HyperRAM RESET# output
