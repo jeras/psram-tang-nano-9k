@@ -62,6 +62,7 @@ module hyperram_cache_tb #(
     // memory PHY interface: write data
     logic [PHY_BYTE_WIDTH-1:0] phy_wdt_byte ;
     logic [PHY_DATA_WIDTH-1:0] phy_wdt_data ;
+    logic                      phy_wdt_last ;
     logic                      phy_wdt_valid;
     logic                      phy_wdt_ready;
     // memory PHY interface: read data
@@ -147,6 +148,8 @@ module hyperram_cache_tb #(
         // memory PHY interface: write data
         .phy_req_byte  (phy_wdt_byte ),
         .phy_wdt_data  (phy_wdt_data ),
+        .phy_wdt_last  (phy_wdt_last ),
+        .phy_wdt_valid (phy_wdt_valid),
         .phy_wdt_ready (phy_wdt_ready),
         // memory PHY interface: read data
         .phy_rdt_data  (phy_rdt_data ),
@@ -185,6 +188,7 @@ module hyperram_cache_tb #(
         // memory PHY interface: write data
         .phy_wdt_byte  (phy_wdt_byte ),
         .phy_wdt_data  (phy_wdt_data ),
+        .phy_wdt_last  (phy_wdt_last ),
         .phy_wdt_valid (phy_wdt_valid),
         .phy_wdt_ready (phy_wdt_ready),
         // memory PHY interface: read data

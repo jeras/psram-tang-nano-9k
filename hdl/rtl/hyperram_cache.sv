@@ -45,6 +45,8 @@ module hyperram_cache #(
     // memory PHY interface: write data
     output logic [PHY_BYTE_WIDTH-1:0] phy_req_byte ,
     output logic [PHY_DATA_WIDTH-1:0] phy_wdt_data ,
+    output logic                      phy_wdt_last ,
+    output logic                      phy_wdt_valid,
     input  logic                      phy_wdt_ready,
     // memory PHY interface: read data
     input  logic [PHY_DATA_WIDTH-1:0] phy_rdt_data ,

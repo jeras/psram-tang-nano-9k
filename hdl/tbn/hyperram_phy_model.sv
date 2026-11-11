@@ -17,7 +17,7 @@ module hyperram_phy_model #(
     localparam int    BYTE_WIDTH           = DATA_WIDTH/8,
     // PHY timing parameters (in clock cycles)
     parameter  int    WRITE_READY_DELAY    = 4,  // from request to being ready to accept write data
-    parameter  int    READ_VALID_DELAY     = 8,  // from request to a valid read data response
+    parameter  int    READ_STRB_DELAY      = 8,  // from request to read data strobe
     parameter  int    EXTENDED_DELAY       = 4,  // added randomly to read/write data delay
     parameter  int    IDLE_DELAY           = 4   // extra delay between request handshakes
 )(
@@ -28,12 +28,13 @@ module hyperram_phy_model #(
     input  logic                  phy_req_valid,  // request handshake valid
     input  logic                  phy_req_type ,  // burst type 0: wrapped, 1: linear
     input  logic                  phy_req_read ,  // 0: write, 1: read
-    input  logic [SIZE_WIDTH-1:0] phy_req_size ,  // transfer size (phy_req_size+1) in 16 bit words
+    input  logic [SIZE_WIDTH-1:0] phy_req_size ,  // read sequence size (phy_req_size+1) in 16 bit words
     input  logic [ADDR_WIDTH-1:0] phy_req_addr ,  // word (16-bit) address
     output logic                  phy_req_ready,  // request handshake ready
     // memory PHY interface: write data
     input  logic [BYTE_WIDTH-1:0] phy_wdt_byte ,  // byte enable
     input  logic [DATA_WIDTH-1:0] phy_wdt_data ,  // write data
+    input  logic                  phy_wdt_last ,  // last data word in write sequence
     input  logic                  phy_wdt_valid,  // valid write data is available (active clock stop)
     output logic                  phy_wdt_ready,  // ready to accept write data
     // memory PHY interface: read data
@@ -59,7 +60,7 @@ module hyperram_phy_model #(
     logic phy_req_transfer;
 
     // model memory
-    logic [8-1:0] mem [0:2**ADDR_WIDTH-1];
+    logic [BYTE_WIDTH-1:0][8-1:0] mem [0:2**ADDR_WIDTH-1];
 
     // interface handshake transfer
     assign phy_req_transfer = phy_req_valid & phy_req_ready;
@@ -68,6 +69,8 @@ module hyperram_phy_model #(
     // TODO: memory initialization
     initial begin
     end
+
+    // TODO: add wrap mode
 
     always_ff @(posedge phy_clk, posedge phy_rst)
     if (phy_rst) begin
@@ -82,7 +85,7 @@ module hyperram_phy_model #(
         // interface
         phy_req_ready <= 1'b0;
         phy_wdt_ready <= 1'b0;
-        phy_rdt_strb  <= 1'b0;        
+        phy_rdt_strb  <= 1'b0;
     end else begin
         case (fsm_state)
             FSM_IDLE: begin
@@ -103,14 +106,16 @@ module hyperram_phy_model #(
                 end
             end
             FSM_READ: begin
-                if (fsm_delay > READ_VALID_DELAY) begin
+                // TODO: support for pause
+                if (fsm_delay > READ_STRB_DELAY) begin
                     if (fsm_cnt < fsm_size) begin
                         // read data interface
                         phy_rdt_strb  <= 1'b1;
-                        phy_rdt_data  <= {mem[fsm_addr+1], mem[fsm_addr]};
+                        // memory read
+                        phy_rdt_data  <= mem[fsm_addr];
                         // FSM
                         fsm_cnt       <= fsm_cnt + 1;
-                        fsm_addr      <= fsm_addr + 'd2;
+                        fsm_addr      <= fsm_addr + 'd1;
                     end else begin
                         // read data interface
                         phy_rdt_strb  <= 1'b0;
@@ -125,13 +130,35 @@ module hyperram_phy_model #(
                 end
             end
             FSM_WRITE: begin
-    
+                if (fsm_delay > WRITE_READY_DELAY) begin
+                    // write data interface
+                    phy_wdt_ready <= 1'b1;
+                    if (phy_wdt_valid) begin
+                        if (phy_wdt_last) begin
+                            phy_wdt_ready <= 1'b0;
+                            // FSM
+                            fsm_state     <= FSM_IDLE;
+                            fsm_delay     <= 0;
+                            fsm_cnt       <= 0;
+                        end else begin
+                            // FSM
+                            fsm_cnt  <= fsm_cnt + 1;
+                            fsm_addr <= fsm_addr + 'd1;
+                        end
+                    end
+                end else begin
+                    fsm_delay <= fsm_delay + 1;
+                end
+                // memory write
+                if (phy_wdt_valid & phy_wdt_ready) begin
+                    for (int unsigned i=0; i<BYTE_WIDTH; i++) begin
+                        mem[fsm_addr][i] <= phy_wdt_data[i*8+:8];
+                    end
+                end
             end
             default: begin end
-        endcase        
+        endcase
     end
-    
-    
 
 //    always_comb
 //    case (fsm_state)
