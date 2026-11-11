@@ -51,6 +51,7 @@ module hyperram_cache #(
     // memory PHY interface: read data
     input  logic [PHY_DATA_WIDTH-1:0] phy_rdt_data ,
     input  logic                      phy_rdt_strb ,
+    input  logic                      phy_rdt_last ,
     output logic                      phy_rdt_pause
 );
 

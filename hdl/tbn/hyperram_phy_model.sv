@@ -28,18 +28,19 @@ module hyperram_phy_model #(
     input  logic                  phy_req_valid,  // request handshake valid
     input  logic                  phy_req_type ,  // burst type 0: wrapped, 1: linear
     input  logic                  phy_req_read ,  // 0: write, 1: read
-    input  logic [SIZE_WIDTH-1:0] phy_req_size ,  // read sequence size (phy_req_size+1) in 16 bit words
+    input  logic [SIZE_WIDTH-1:0] phy_req_size ,  // read stream size (phy_req_size+1) in 16 bit words
     input  logic [ADDR_WIDTH-1:0] phy_req_addr ,  // word (16-bit) address
     output logic                  phy_req_ready,  // request handshake ready
     // memory PHY interface: write data
     input  logic [BYTE_WIDTH-1:0] phy_wdt_byte ,  // byte enable
     input  logic [DATA_WIDTH-1:0] phy_wdt_data ,  // write data
-    input  logic                  phy_wdt_last ,  // last data word in write sequence
+    input  logic                  phy_wdt_last ,  // last data word in write stream
     input  logic                  phy_wdt_valid,  // valid write data is available (active clock stop)
     output logic                  phy_wdt_ready,  // ready to accept write data
     // memory PHY interface: read data
     output logic [DATA_WIDTH-1:0] phy_rdt_data ,  // read data (byte enable is ignored)
     output logic                  phy_rdt_strb ,  // strobe read data word
+    output logic                  phy_rdt_last ,  // marks last data word in the read stream
     input  logic                  phy_rdt_pause   // pause data strobes after ODDR delay (active clock stop)
 );
 

@@ -68,6 +68,7 @@ module hyperram_cache_tb #(
     // memory PHY interface: read data
     logic [PHY_DATA_WIDTH-1:0] phy_rdt_data ;
     logic                      phy_rdt_strb ;
+    logic                      phy_rdt_last ;
     logic                      phy_rdt_pause;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -154,6 +155,7 @@ module hyperram_cache_tb #(
         // memory PHY interface: read data
         .phy_rdt_data  (phy_rdt_data ),
         .phy_rdt_strb  (phy_rdt_strb ),
+        .phy_rdt_last  (phy_rdt_last ),
         .phy_rdt_pause (phy_rdt_pause)
     );
 
@@ -194,6 +196,7 @@ module hyperram_cache_tb #(
         // memory PHY interface: read data
         .phy_rdt_data  (phy_rdt_data ),
         .phy_rdt_strb  (phy_rdt_strb ),
+        .phy_rdt_last  (phy_rdt_last ),
         .phy_rdt_pause (phy_rdt_pause)
     );
 
