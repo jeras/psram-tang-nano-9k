@@ -21,9 +21,10 @@ module hyperram_phy_model #(
     parameter  int    EXTENDED_DELAY       = 4,  // added randomly to read/write data delay
     parameter  int    IDLE_DELAY           = 4   // extra delay between request handshakes
 )(
-    // system clock
-    input  logic                  clk,
-    // PHY interface: request
+    // system clock/reset
+    input  logic                  phy_clk,
+    input  logic                  phy_rst,
+    // memory PHY interface: request
     input  logic                  phy_req_valid,  // request handshake valid
     input  logic                  phy_req_type ,  // burst type 0: wrapped, 1: linear
     input  logic                  phy_req_read ,  // 0: write, 1: read
@@ -66,73 +67,83 @@ module hyperram_phy_model #(
     // initialization to an idle state
     // TODO: memory initialization
     initial begin
+    end
+
+    always_ff @(posedge phy_clk, posedge phy_rst)
+    if (phy_rst) begin
         // FSM
         fsm_state <= FSM_IDLE;
         fsm_delay <= 0;
         fsm_cnt   <= 0;
+        // request signal copies
+        fsm_read  <= 'x;
+        fsm_size  <= 'x;
+        fsm_addr  <= 'x;
         // interface
         phy_req_ready <= 1'b0;
         phy_wdt_ready <= 1'b0;
-        phy_rdt_strb  <= 1'b0;
-    end
-
-    always_ff @(posedge clk)
-    case (fsm_state)
-        FSM_IDLE: begin
-            if (fsm_delay == IDLE_DELAY) begin
-                phy_req_ready <= 1'b1;
-            end
-            if (phy_req_transfer) begin
-                // state
-                fsm_state <= phy_req_read ? FSM_READ : FSM_WRITE;
-                fsm_delay <= 0;
-                fsm_cnt   <= 0;
-                // request signal copies
-                fsm_read  <= phy_req_read;
-                fsm_size  <= phy_req_size;
-                fsm_addr  <= phy_req_addr;
-            end else begin
-                fsm_delay <= fsm_delay + 1;
-            end
-        end
-        FSM_READ: begin
-            if (fsm_delay > READ_VALID_DELAY) begin
-                if (fsm_cnt < fsm_size) begin
-                    // read data interface
-                    phy_rdt_strb  <= 1'b1;
-                    phy_rdt_data  <= {mem[fsm_addr+1], mem[fsm_addr]};
-                    // FSM
-                    fsm_cnt       <= fsm_cnt + 1;
-                    fsm_addr      <= fsm_addr + 'd2;
-                end else begin
-                    // read data interface
-                    phy_rdt_strb  <= 1'b0;
-                    phy_rdt_data  <= 'x;
-                    // FSM
-                    fsm_state     <= FSM_IDLE;
-                    fsm_delay     <= 0;
-                    fsm_cnt       <= 0;
+        phy_rdt_strb  <= 1'b0;        
+    end else begin
+        case (fsm_state)
+            FSM_IDLE: begin
+                if (fsm_delay == IDLE_DELAY) begin
+                    phy_req_ready <= 1'b1;
                 end
-            end else begin
-                fsm_delay <= fsm_delay + 1;
+                if (phy_req_transfer) begin
+                    // state
+                    fsm_state <= phy_req_read ? FSM_READ : FSM_WRITE;
+                    fsm_delay <= 0;
+                    fsm_cnt   <= 0;
+                    // request signal copies
+                    fsm_read  <= phy_req_read;
+                    fsm_size  <= phy_req_size;
+                    fsm_addr  <= phy_req_addr;
+                end else begin
+                    fsm_delay <= fsm_delay + 1;
+                end
             end
-        end
-        FSM_WRITE: begin
+            FSM_READ: begin
+                if (fsm_delay > READ_VALID_DELAY) begin
+                    if (fsm_cnt < fsm_size) begin
+                        // read data interface
+                        phy_rdt_strb  <= 1'b1;
+                        phy_rdt_data  <= {mem[fsm_addr+1], mem[fsm_addr]};
+                        // FSM
+                        fsm_cnt       <= fsm_cnt + 1;
+                        fsm_addr      <= fsm_addr + 'd2;
+                    end else begin
+                        // read data interface
+                        phy_rdt_strb  <= 1'b0;
+                        phy_rdt_data  <= 'x;
+                        // FSM
+                        fsm_state     <= FSM_IDLE;
+                        fsm_delay     <= 0;
+                        fsm_cnt       <= 0;
+                    end
+                end else begin
+                    fsm_delay <= fsm_delay + 1;
+                end
+            end
+            FSM_WRITE: begin
+    
+            end
+            default: begin end
+        endcase        
+    end
+    
+    
 
-        end
-    endcase
-
-    always_comb
-    case (fsm_state)
-        FSM_IDLE: begin
-
-        end
-        FSM_READ: begin
-
-        end
-        FSM_WRITE: begin
-
-        end
-    endcase
+//    always_comb
+//    case (fsm_state)
+//        FSM_IDLE: begin
+//
+//        end
+//        FSM_READ: begin
+//
+//        end
+//        FSM_WRITE: begin
+//
+//        end
+//    endcase
 
 endmodule: hyperram_phy_model

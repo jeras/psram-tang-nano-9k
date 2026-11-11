@@ -4,43 +4,52 @@
 
 module hyperram_cache #(
     // system bus and memory parameters
-    parameter  int unsigned ADDR_WIDTH = 26,            // 64MB address space by default
+    parameter  int unsigned ADDR_WIDTH = 32,            // address space size
     parameter  int unsigned DATA_WIDTH = 32,            // 16/32/64-bit system bus
     localparam int unsigned BYTE_WIDTH = DATA_WIDTH/8,  // word size in bytes
     // cache parameters
-    parameter  int unsigned ASSOCIATIVITY = 1,        // options are 1/2/4
-    parameter  int unsigned CACHE_SIZE = 1024*4,      // cache size in bytes
-    parameter  int unsigned LINE_SIZE = 128           // line size in bytes
+    parameter  int unsigned ASSOCIATIVITY = 1,          // options are 1/2/4
+    parameter  int unsigned BLOCK_SIZE = 2*1024,        // cache block size in bytes
+    parameter  int unsigned LINE_SIZE = 128,            // cache line size in bytes
+    localparam int unsigned CACHE_SIZE = BLOCK_SIZE*ASSOCIATIVITY,
+    // calculated PHY parameters (PHY interface data unit is 16-bit)
+    localparam int unsigned PHY_SIZE_WIDTH = $clog2(LINE_SIZE)-1,
+    parameter  int unsigned PHY_ADDR_WIDTH = ADDR_WIDTH-1,
+    parameter  int unsigned PHY_DATA_WIDTH = 16,
+    localparam int unsigned PHY_BYTE_WIDTH = PHY_DATA_WIDTH/8
 )(
     // system signals
-    input  logic clk,
-    input  logic rst,
-    // system bus interface
-    input  logic                  bus_req_valid,
-    input  logic                  bus_req_write,
-    input  logic [ADDR_WIDTH-1:0] bus_req_addr ,
-    input  logic [BYTE_WIDTH-1:0] bus_req_byte ,
-    input  logic [DATA_WIDTH-1:0] bus_req_wdata,
-    output logic                  bus_req_ready,
-    output logic [DATA_WIDTH-1:0] bus_rsp_rdata,
-    output logic [DATA_WIDTH-1:0] bus_rsp_error,  // ???
+    input  logic                      clk,
+    input  logic                      rst,
     // cache control signals
-    input  logic                  ctl_invalidate,
+    input  logic                      ctl_invalidate,
+    // system bus interface
+    input  logic                      bus_req_valid,
+    input  logic                      bus_req_write,
+    input  logic     [ADDR_WIDTH-1:0] bus_req_addr ,
+    input  logic     [BYTE_WIDTH-1:0] bus_req_byte ,
+    input  logic     [DATA_WIDTH-1:0] bus_req_wdata,
+    output logic                      bus_req_ready,
+    output logic     [DATA_WIDTH-1:0] bus_rsp_rdata,
+    output logic     [DATA_WIDTH-1:0] bus_rsp_error,  // ???
     // memory PHY interface
-    input  logic                  phy_clk,
-    input  logic                  phy_rst,
+    input  logic                      phy_clk,
+    input  logic                      phy_rst,
     // memory PHY interface: request
-    output logic                  phy_req_valid,
-    output logic                  phy_req_read ,
-    output logic [ADDR_WIDTH-1:0] phy_req_addr ,
-    input  logic                  phy_req_ready,
+    output logic                      phy_req_valid,
+    output logic                      phy_req_type ,
+    output logic                      phy_req_read ,
+    output logic [PHY_SIZE_WIDTH-1:0] phy_req_size ,
+    output logic [PHY_ADDR_WIDTH-1:0] phy_req_addr ,
+    input  logic                      phy_req_ready,
     // memory PHY interface: write data
-    output logic [BYTE_WIDTH-1:0] phy_req_byte ,
-    output logic [DATA_WIDTH-1:0] phy_wdt_data ,
-    input  logic                  phy_wdt_ready,
+    output logic [PHY_BYTE_WIDTH-1:0] phy_req_byte ,
+    output logic [PHY_DATA_WIDTH-1:0] phy_wdt_data ,
+    input  logic                      phy_wdt_ready,
     // memory PHY interface: read data
-    input  logic [DATA_WIDTH-1:0] phy_rdt_data ,
-    input  logic                  phy_rdt_valid
+    input  logic [PHY_DATA_WIDTH-1:0] phy_rdt_data ,
+    input  logic                      phy_rdt_strb ,
+    output logic                      phy_rdt_pause
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -50,48 +59,47 @@ module hyperram_cache #(
     // NOTE: sizes are measured in bytes
     // NOTE: lengths are the number of addressable locations
 
-    // a N-way cache has N entries, the cache size is divided into N entry sizes
-    localparam int unsigned CACHE_ENTRY_SIZE   = CACHE_SIZE/ASSOCIATIVITY;
-    localparam int unsigned CACHE_ENTRY_LENGTH = CACHE_ENTRY_SIZE/LINE_SIZE;
-    localparam int unsigned CACHE_TAG_LENGTH   = CACHE_ENTRY_SIZE/LINE_SIZE;
+    // memory addressable length
+    localparam int unsigned BLOCK_LENGTH = BLOCK_SIZE/BYTE_WIDTH;
+    localparam int unsigned TAG_LENGTH   = BLOCK_SIZE/LINE_SIZE;
 
     // address signal widths
-    localparam int unsigned CACHE_ADDR_WIDTH   = $clog2(CACHE_ENTRY_LENGTH);
-    localparam int unsigned CACHE_WORD_WIDTH   = $clog2(BYTE_WIDTH);
-    localparam int unsigned CACHE_OFFSET_WIDTH = $clog2(LINE_SIZE);
-    localparam int unsigned CACHE_INDEX_WIDTH  =            CACHE_ADDR_WIDTH-CACHE_OFFSET_WIDTH;
-    localparam int unsigned CACHE_TAG_WIDTH    = ADDR_WIDTH-CACHE_ADDR_WIDTH;
+    localparam int unsigned ADDR_BLOCK_WIDTH  = $clog2(BLOCK_SIZE);
+    localparam int unsigned ADDR_WORD_WIDTH   = $clog2(BYTE_WIDTH);
+    localparam int unsigned ADDR_OFFSET_WIDTH = $clog2(LINE_SIZE);
+    localparam int unsigned ADDR_INDEX_WIDTH  = ADDR_BLOCK_WIDTH - ADDR_OFFSET_WIDTH;
+    localparam int unsigned ADDR_TAG_WIDTH    = ADDR_WIDTH-ADDR_BLOCK_WIDTH;
 
 ///////////////////////////////////////////////////////////////////////////////
 // local signals
 ///////////////////////////////////////////////////////////////////////////////
 
     // address structure {tag, index, offset}
-    logic [                                CACHE_OFFSET_WIDTH-1:0] addr_offset;
-    logic [             CACHE_ADDR_WIDTH-1:CACHE_OFFSET_WIDTH    ] addr_index;
-    logic [ADDR_WIDTH-1:CACHE_ADDR_WIDTH                         ] addr_tag;
+    logic [                                ADDR_OFFSET_WIDTH-1:0] addr_offset;
+    logic [             ADDR_BLOCK_WIDTH-1:ADDR_OFFSET_WIDTH    ] addr_index;
+    logic [ADDR_WIDTH-1:ADDR_BLOCK_WIDTH                        ] addr_tag;
     // word address within a block
-    logic [             CACHE_ADDR_WIDTH-1:CACHE_WORD_WIDTH      ] addr_word;
+    logic [             ADDR_BLOCK_WIDTH-1:ADDR_WORD_WIDTH      ] addr_word;
 
     logic        [DATA_WIDTH-1:0] entry_data [ASSOCIATIVITY-1:0];
-    logic [2+CACHE_TAG_WIDTH-1:0] entry_tag  [ASSOCIATIVITY-1:0];
+    logic    [ADDR_TAG_WIDTH-1:0] entry_tag  [ASSOCIATIVITY-1:0];
     logic     [ASSOCIATIVITY-1:0] entry_valid;
     logic     [ASSOCIATIVITY-1:0] entry_dirty;
     logic     [ASSOCIATIVITY-1:0] entry_hit;
     logic hit;
 
     // cache controller valid/dirty/tag
-    logic                         ctl_valid;
-    logic                         ctl_dirty;
-    logic   [CACHE_TAG_WIDTH-1:0] ctl_tag  ;
+    logic                        ctl_valid;
+    logic                        ctl_dirty;
+    logic   [ADDR_TAG_WIDTH-1:0] ctl_tag  ;
     // cache controller
-    logic [CACHE_INDEX_WIDTH-1:0] ctl_index;
-    logic                         ctl_write;
+    logic [ADDR_INDEX_WIDTH-1:0] ctl_index;
+    logic                        ctl_write;
 
     // cache controller FSM
-    logic                 [2-1:0] fsm_state;
-    logic [CACHE_INDEX_WIDTH-1:0] fsm_index;
-    logic [CACHE_INDEX_WIDTH-0:0] fsm_cnt;    // extra overflow (carry) bit
+    logic                [2-1:0] fsm_state;
+    logic [ADDR_INDEX_WIDTH-1:0] fsm_index;
+    logic [ADDR_INDEX_WIDTH-0:0] fsm_cnt;    // extra overflow (carry) bit
 
     // system bus local signals
     logic bus_req_transfer;
@@ -103,17 +111,17 @@ module hyperram_cache #(
     // address structure
     assign {addr_tag, addr_index, addr_offset} = bus_req_addr;
     // word address within a block
-    assign addr_word = bus_req_addr[CACHE_INDEX_WIDTH-1:CACHE_WORD_WIDTH];
+    assign addr_word = bus_req_addr[ADDR_BLOCK_WIDTH-1:ADDR_WORD_WIDTH];
 
     generate
     for (genvar i=0; i<ASSOCIATIVITY; i++) begin: block
 
         // data memory
-        logic [8-1:0][BYTE_WIDTH-1:0] mem_dat [0:CACHE_ENTRY_LENGTH-1];
+        logic [BYTE_WIDTH-1:0][8-1:0] mem_dat [0:BLOCK_LENGTH-1];
         // tag memory
-        logic                       mem_valid [0:CACHE_ENTRY_LENGTH-1];
-        logic                       mem_dirty [0:CACHE_ENTRY_LENGTH-1];
-        logic [CACHE_TAG_WIDTH-1:0] mem_tag   [0:CACHE_ENTRY_LENGTH-1];
+        logic                       mem_valid [0:TAG_LENGTH-1];
+        logic                       mem_dirty [0:TAG_LENGTH-1];
+        logic  [ADDR_TAG_WIDTH-1:0] mem_tag   [0:TAG_LENGTH-1];
 
         // asynchronous read tag memory
         assign entry_valid[i] = mem_valid[addr_index];
@@ -129,7 +137,7 @@ module hyperram_cache #(
             // write access
             if (bus_req_write) begin
                 for (int unsigned b=0; b<BYTE_WIDTH; b++) begin
-                    if (bus_req_byte[b])  mem_dat[addr_word][b] = bus_req_wdata[b*8:8];
+                    if (bus_req_byte[b])  mem_dat[addr_word][b] <= bus_req_wdata[b*8+:8];
                 end
             end
             // read access
@@ -160,7 +168,7 @@ module hyperram_cache #(
     localparam int unsigned CACHE_PLRU_WIDTH = ASSOCIATIVITY == 4 ? 3 : 1;
 
     // pLRU (binary tree pseudo least recently used)
-    logic [CACHE_PLRU_WIDTH-1:0] mem_plru [0:CACHE_ENTRY_LENGTH-1];
+    logic [CACHE_PLRU_WIDTH-1:0] mem_plru [0:BLOCK_LENGTH-1];
 
     // FSM
     localparam bit [2-1:0] FSM_INIT  = 2'b00;
@@ -182,9 +190,9 @@ module hyperram_cache #(
             // invalidation sequence
             FSM_INIT: begin
                 // index counter increment
-                fsm_index <= fsm_cnt[CACHE_INDEX_WIDTH-1:0];
+                fsm_index <= fsm_cnt[ADDR_INDEX_WIDTH-1:0];
                 // index counter overflow ends invalidation sequence
-                fsm_state <= fsm_cnt[CACHE_INDEX_WIDTH];
+                if (fsm_cnt[ADDR_INDEX_WIDTH])  fsm_state <= FSM_INIT;
             end
             // idle
             FSM_IDLE: begin
@@ -196,6 +204,7 @@ module hyperram_cache #(
                     fsm_state <= bus_req_write ? FSM_WRITE : FSM_READ;
                 end
             end
+            default: begin end
         endcase
     end
 
