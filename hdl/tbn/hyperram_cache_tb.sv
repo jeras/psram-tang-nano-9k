@@ -181,11 +181,11 @@ module hyperram_cache_tb #(
     hyperram_cache #(
         // system bus and memory parameters
         .ADDR_WIDTH (BUS_ADDR_WIDTH),
-        .DATA_WIDTH (BUS_DATA_WIDTH)
+        .DATA_WIDTH (BUS_DATA_WIDTH),
         // cache parameters
 //        .ASSOCIATIVITY (),
 //        .BLOCK_SIZE    (),
-//        .LINE_SIZE     ()
+          .LINE_SIZE     (LINE_SIZE)
     ) cache (
         // system signals
         .bus_clk       (bus_clk),
