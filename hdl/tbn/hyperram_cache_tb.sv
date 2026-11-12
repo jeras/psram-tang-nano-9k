@@ -72,7 +72,7 @@ module hyperram_cache_tb #(
     logic                      phy_rdt_pause;
 
 ///////////////////////////////////////////////////////////////////////////////
-// test sequence
+// system/PHY clock/reset
 ///////////////////////////////////////////////////////////////////////////////
 
     localparam realtime BUS_PERIOD = 20ns;  //  50MHz
@@ -86,19 +86,18 @@ module hyperram_cache_tb #(
     initial
     begin
         // power up state
-        bus_rst = 1;
+        bus_rst <= 1;
         // reset sequence (release)
-        repeat (16) @(posedge bus_clk);
-        bus_rst = 0;
-        repeat (16) @(posedge bus_clk);
+        repeat (4) @(posedge bus_clk);
+        bus_rst <= 0;
     end
 
     // initialization to idle state
     initial begin
         // cache control signals
-        ctl_invalidate = 1'b0;
+        ctl_invalidate <= 1'b0;
         // system bus interface
-        bus_req_valid  = 1'b0;
+        bus_req_valid  <= 1'b0;
     end
 
     // PHY clock
@@ -108,6 +107,72 @@ module hyperram_cache_tb #(
     // PHY reset
     always_ff @(posedge phy_clk)
     phy_rst <= bus_rst;
+
+///////////////////////////////////////////////////////////////////////////////
+// system bus task
+///////////////////////////////////////////////////////////////////////////////
+
+    task bus_write (
+        input  logic [BUS_ADDR_WIDTH-1:0] addr,
+        input  logic [BUS_BYTE_WIDTH-1:0] mask,
+        input  logic [BUS_DATA_WIDTH-1:0] data
+    );
+        bus_req_valid <= 1'b1;
+        bus_req_write <= 1'b1;
+        bus_req_addr  <= addr;
+        bus_req_byte  <= mask;
+        bus_req_wdata <= data;
+        do
+            @(posedge bus_clk);
+        while (~bus_req_ready);
+        bus_req_valid <= 1'b0;
+        bus_req_write <= 1'bx;
+        bus_req_addr  <= 'x;
+        bus_req_byte  <= 'x;
+        bus_req_wdata <= 'x;
+    endtask: bus_write
+
+    task bus_read (
+        input  logic [BUS_ADDR_WIDTH-1:0] addr,
+        output logic [BUS_DATA_WIDTH-1:0] data
+    );
+        bus_req_valid <= 1'b1;
+        bus_req_write <= 1'b0;
+        bus_req_addr  <= addr;
+        do
+            @(posedge bus_clk);
+        while (~bus_req_ready);
+        bus_req_valid <= 1'b0;
+        bus_req_write <= 1'bx;
+        bus_req_addr  <= 'x;
+        @(posedge bus_clk);
+        data <= bus_rsp_rdata;
+    endtask: bus_read
+
+///////////////////////////////////////////////////////////////////////////////
+// test sequence
+///////////////////////////////////////////////////////////////////////////////
+
+    initial
+    begin
+        logic [BUS_DATA_WIDTH-1:0] tmp_data;
+
+        // waveform dump
+        $dumpfile("hyperram_cache_tb.fst");
+        $dumpvars(0, hyperram_cache_tb); // Replace top_tb with your testbench module name
+        repeat(24)  @(posedge bus_clk);
+
+        bus_read(0, tmp_data);
+        repeat(100)  @(posedge bus_clk);
+        $finish;
+    end
+    
+    // timeoout
+    initial
+    begin
+        repeat(100)  @(posedge bus_clk);
+        $finish;
+    end
 
 ///////////////////////////////////////////////////////////////////////////////
 // HyperRAM cache DUT instance
@@ -123,8 +188,8 @@ module hyperram_cache_tb #(
 //        .LINE_SIZE     ()
     ) cache (
         // system signals
-        .clk           (bus_clk),
-        .rst           (bus_rst),
+        .bus_clk       (bus_clk),
+        .bus_rst       (bus_rst),
         // cache control signals
         .ctl_invalidate(ctl_invalidate),
         // system bus interface

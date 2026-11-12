@@ -8,10 +8,10 @@ module hyperram_cache #(
     parameter  int unsigned DATA_WIDTH = 32,            // 16/32/64-bit system bus
     localparam int unsigned BYTE_WIDTH = DATA_WIDTH/8,  // word size in bytes
     // cache parameters
-    parameter  int unsigned ASSOCIATIVITY = 1,          // options are 1/2/4
-    parameter  int unsigned BLOCK_SIZE = 2*1024,        // cache block size in bytes
-    parameter  int unsigned LINE_SIZE = 128,            // cache line size in bytes
-    localparam int unsigned CACHE_SIZE = BLOCK_SIZE*ASSOCIATIVITY,
+    parameter  int unsigned ASSOCIATIVITY  = 1,         // options are 1/2/4
+    parameter  int unsigned BLOCK_SIZE     = 2*1024,    // cache block size in bytes
+    parameter  int unsigned LINE_SIZE      = 64,        // cache line size in bytes
+    localparam int unsigned CACHE_SIZE     = BLOCK_SIZE*ASSOCIATIVITY,
     // calculated PHY parameters (PHY interface data unit is 16-bit)
     localparam int unsigned PHY_SIZE_WIDTH = $clog2(LINE_SIZE)-1,
     parameter  int unsigned PHY_ADDR_WIDTH = ADDR_WIDTH-1,
@@ -19,8 +19,8 @@ module hyperram_cache #(
     localparam int unsigned PHY_BYTE_WIDTH = PHY_DATA_WIDTH/8
 )(
     // system signals
-    input  logic                      clk,
-    input  logic                      rst,
+    input  logic                      bus_clk,
+    input  logic                      bus_rst,
     // cache control signals
     input  logic                      ctl_invalidate,
     // system bus interface
@@ -92,17 +92,27 @@ module hyperram_cache #(
     logic hit;
 
     // cache controller valid/dirty/tag
-    logic                        ctl_valid;
-    logic                        ctl_dirty;
-    logic   [ADDR_TAG_WIDTH-1:0] ctl_tag  ;
+    logic                         ctl_valid;
+    logic                         ctl_dirty;
+    logic    [ADDR_TAG_WIDTH-1:0] ctl_tag  ;
     // cache controller
-    logic [ADDR_INDEX_WIDTH-1:0] ctl_index;
-    logic                        ctl_write;
+    logic  [ADDR_INDEX_WIDTH-1:0] ctl_index;
+    logic                         ctl_valid_write;
+    logic                         ctl_dirty_write;
+    logic                         ctl_tag_write;
+
+    // cache invalidation signals
+    logic  [ADDR_INDEX_WIDTH-1:0] inv_index;
+    logic  [ADDR_INDEX_WIDTH-0:0] inv_index_cnt;
+    logic                         inv_write;
 
     // cache controller FSM
-    logic                [2-1:0] fsm_state;
-    logic [ADDR_INDEX_WIDTH-1:0] fsm_index;
-    logic [ADDR_INDEX_WIDTH-0:0] fsm_cnt;    // extra overflow (carry) bit
+    logic                 [2-1:0] fsm_state;
+    logic [ADDR_OFFSET_WIDTH-1:0] fsm_offset;
+    logic [ADDR_OFFSET_WIDTH-0:0] fsm_offset_cnt;
+    logic  [ADDR_INDEX_WIDTH-1:0] fsm_index;
+    logic  [ADDR_INDEX_WIDTH-0:0] fsm_index_cnt;  // extra overflow (carry) bit
+    logic    [ADDR_TAG_WIDTH-1:0] fsm_tag;
 
     // system bus local signals
     logic bus_req_transfer;
@@ -135,7 +145,7 @@ module hyperram_cache #(
         assign entry_hit[i] = (entry_tag[i] == addr_tag) & entry_valid[i];
 
         // system bus read/write data memory (enabled only on hit)
-        always_ff @(posedge clk)
+        always_ff @(posedge bus_clk)
         if (bus_req_valid & entry_hit[i]) begin
             // write access
             if (bus_req_write) begin
@@ -147,12 +157,25 @@ module hyperram_cache #(
             if (~bus_req_write)  entry_data[i] <= mem_dat[addr_word];
         end
 
+        // PHY interface read/write data memory
+        always_ff @(posedge phy_clk)
+        begin
+            // write access
+            // TODO: avoid long line
+            if (phy_rdt_strb) begin
+                if (~fsm_offset[ADDR_WORD_WIDTH-1])  mem_dat[{fsm_index, fsm_offset[ADDR_OFFSET_WIDTH-1:ADDR_WORD_WIDTH]}][1:0] <= phy_rdt_data;
+                if ( fsm_offset[ADDR_WORD_WIDTH-1])  mem_dat[{fsm_index, fsm_offset[ADDR_OFFSET_WIDTH-1:ADDR_WORD_WIDTH]}][3:2] <= phy_rdt_data;
+            end
+            // read access
+            if (~bus_req_write)  entry_data[i] <= mem_dat[addr_word];
+        end
+
         // valid/dirty/tag write logic
-        always_ff @(posedge clk)
-        if (ctl_write) begin
-            mem_valid[ctl_index] <= ctl_valid;
-            mem_dirty[ctl_index] <= ctl_dirty;
-            mem_tag  [ctl_index] <= ctl_tag  ;
+        always_ff @(posedge bus_clk)
+        begin
+            if (ctl_valid_write)  mem_valid[ctl_index] <= ctl_valid;
+            if (ctl_dirty_write)  mem_dirty[ctl_index] <= ctl_dirty;
+            if (ctl_tag_write  )  mem_tag  [ctl_index] <= ctl_tag  ;
         end
 
     end: block
@@ -176,16 +199,17 @@ module hyperram_cache #(
     // FSM
     localparam bit [2-1:0] FSM_INIT  = 2'b00;
     localparam bit [2-1:0] FSM_IDLE  = 2'b01;
-    localparam bit [2-1:0] FSM_WRITE = 2'b10;
-    localparam bit [2-1:0] FSM_READ  = 2'b11;
-    localparam             FSM_FETCH = 2'b10;
-    localparam             FSM_WBACK = 2'b11;
+    localparam bit [2-1:0] FSM_FETCH = 2'b10;
+    localparam bit [2-1:0] FSM_WBACK = 2'b11;
 
     // TODO: a FSM for clearing the VALID bit from tag memory is needed for ASIC implementations
     // tag
-    always_ff @(posedge clk, posedge rst)
-    if (rst) begin
-        // require invalidation sequence after reset
+    always_ff @(posedge bus_clk, posedge bus_rst)
+    if (bus_rst) begin
+        // invalidation
+        inv_index <=  'b0;
+        inv_write <= 1'b0;
+
         fsm_state <= 2'b00;
         fsm_index <=  'd0;
     end else begin
@@ -193,9 +217,13 @@ module hyperram_cache #(
             // invalidation sequence
             FSM_INIT: begin
                 // index counter increment
-                fsm_index <= fsm_cnt[ADDR_INDEX_WIDTH-1:0];
+                inv_write <= 1'b1;
+                inv_index <= inv_index_cnt[ADDR_INDEX_WIDTH-1:0];
                 // index counter overflow ends invalidation sequence
-                if (fsm_cnt[ADDR_INDEX_WIDTH])  fsm_state <= FSM_INIT;
+                if (inv_index_cnt[ADDR_INDEX_WIDTH]) begin
+                    inv_write <= 1'b0;
+                    fsm_state <= FSM_IDLE;
+                end
             end
             // idle
             FSM_IDLE: begin
@@ -204,21 +232,48 @@ module hyperram_cache #(
                     fsm_state <= FSM_INIT;
                 end
                 if (bus_req_valid & ~hit) begin
-                    fsm_state <= bus_req_write ? FSM_WRITE : FSM_READ;
+                    // TODO: handle writing dirty lines
+                    fsm_state  <= FSM_FETCH;
+                    fsm_tag    <= addr_tag;
+                    fsm_index  <= addr_index;
+//                  fsm_offset <= addr_offset;
+                    fsm_offset <= '0;
+                    // request PHY transaction
+                    phy_req_valid <= 1'b1;
+                    phy_req_read  <= 1'b1;
+                    fsm_state <= bus_req_write ? FSM_WBACK : FSM_FETCH;
                 end
+            end
+            FSM_FETCH: begin
+                if (phy_rdt_strb) begin
+                    fsm_offset <= fsm_offset_cnt[ADDR_OFFSET_WIDTH-1:0];
+                    if (fsm_offset_cnt[ADDR_OFFSET_WIDTH]) fsm_state <= FSM_IDLE;
+                end
+            end
+            FSM_WBACK: begin
+                
             end
             default: begin end
         endcase
     end
 
-    // index counter increment
-    assign fsm_cnt = fsm_index + 'd1;
+    // invalidation index counter increment
+    assign inv_index_cnt = {1'b0, inv_index} + inv_write;
+
+    // fetch/wback {index, offset} address
+    assign fsm_offset_cnt = {1'b0, fsm_offset} + (ADDR_OFFSET_WIDTH+1)'({phy_rdt_strb, 1'b0});
+
+//    assign ctl_index = (fsm_state == FSM_INIT) fsm_index : add
+    assign ctl_index       = (fsm_state == FSM_INIT) ? inv_index : fsm_index;
+    assign ctl_valid       = (fsm_state == FSM_INIT) ? 1'b0      : 1'bx;
+    assign ctl_valid_write = (fsm_state == FSM_INIT) ? inv_write : 1'b0;
 
 ///////////////////////////////////////////////////////////////////////////////
 // memory PHY interface
 ///////////////////////////////////////////////////////////////////////////////
 
-
+    assign phy_req_size = PHY_SIZE_WIDTH'(LINE_SIZE/2-1);
+    assign phy_req_addr = {fsm_tag, fsm_index, (ADDR_OFFSET_WIDTH-1)'('d0)};
 
 ///////////////////////////////////////////////////////////////////////////////
 // system bus
