@@ -53,23 +53,23 @@ module hyperram_cache_tb #(
     logic                      phy_rst;
 
     // PHY interface: request
-    logic                      phy_req_valid;
-    logic                      phy_req_type ;
-    logic                      phy_req_read ;
-    logic [PHY_SIZE_WIDTH-1:0] phy_req_size ;
-    logic [PHY_ADDR_WIDTH-1:0] phy_req_addr ;
-    logic                      phy_req_ready;
+    wire                       phy_req_valid;
+    wire                       phy_req_type ;
+    wire                       phy_req_read ;
+    wire  [PHY_SIZE_WIDTH-1:0] phy_req_size ;
+    wire  [PHY_ADDR_WIDTH-1:0] phy_req_addr ;
+    wire                       phy_req_ready;
     // memory PHY interface: write data
-    logic [PHY_BYTE_WIDTH-1:0] phy_wdt_byte ;
-    logic [PHY_DATA_WIDTH-1:0] phy_wdt_data ;
-    logic                      phy_wdt_last ;
-    logic                      phy_wdt_valid;
-    logic                      phy_wdt_ready;
+    wire  [PHY_BYTE_WIDTH-1:0] phy_wdt_byte ;
+    wire  [PHY_DATA_WIDTH-1:0] phy_wdt_data ;
+    wire                       phy_wdt_last ;
+    wire                       phy_wdt_valid;
+    wire                       phy_wdt_ready;
     // memory PHY interface: read data
-    logic [PHY_DATA_WIDTH-1:0] phy_rdt_data ;
-    logic                      phy_rdt_strb ;
-    logic                      phy_rdt_last ;
-    logic                      phy_rdt_pause;
+    wire  [PHY_DATA_WIDTH-1:0] phy_rdt_data ;
+    wire                       phy_rdt_strb ;
+    wire                       phy_rdt_last ;
+    wire                       phy_rdt_pause;
 
 ///////////////////////////////////////////////////////////////////////////////
 // system/PHY clock/reset

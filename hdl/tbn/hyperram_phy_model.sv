@@ -69,6 +69,9 @@ module hyperram_phy_model #(
     // initialization to an idle state
     // TODO: memory initialization
     initial begin
+        for (int unsigned i=0; i<128; i++) begin
+            mem[i] = (BYTE_WIDTH*8)'(i); 
+        end
     end
 
     // TODO: add wrap mode
@@ -109,9 +112,10 @@ module hyperram_phy_model #(
             FSM_READ: begin
                 // TODO: support for pause
                 if (fsm_delay > READ_STRB_DELAY) begin
-                    if (fsm_cnt < fsm_size) begin
+                    if (fsm_cnt <= fsm_size) begin
                         // read data interface
                         phy_rdt_strb  <= 1'b1;
+                        phy_rdt_last  <= SIZE_WIDTH'(fsm_cnt) == fsm_size;
                         // memory read
                         phy_rdt_data  <= mem[fsm_addr];
                         // FSM

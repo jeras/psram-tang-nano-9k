@@ -265,8 +265,8 @@ module hyperram_cache #(
 
 //    assign ctl_index = (fsm_state == FSM_INIT) fsm_index : add
     assign ctl_index       = (fsm_state == FSM_INIT) ? inv_index : fsm_index;
-    assign ctl_valid       = (fsm_state == FSM_INIT) ? 1'b0      : 1'bx;
-    assign ctl_valid_write = (fsm_state == FSM_INIT) ? inv_write : 1'b0;
+    assign ctl_valid       = (fsm_state == FSM_INIT) ? 1'b0      : 1'b1;
+    assign ctl_valid_write = (fsm_state == FSM_INIT) ? inv_write : phy_rdt_last;
 
 ///////////////////////////////////////////////////////////////////////////////
 // memory PHY interface
