@@ -1,0 +1,100 @@
+///////////////////////////////////////////////////////////////////////////////
+// embedded flash controller
+//
+// Copyright 2026 Iztok Jeras <iztok.jeras@gmail.com>
+//
+// Licensed under CERN-OHL-P v2 or later
+///////////////////////////////////////////////////////////////////////////////
+
+module embedded_flash_controller #(
+    parameter  int unsigned DATA_WIDTH = 32,
+    parameter  int unsigned XADR_WIDTH = 9,
+    parameter  int unsigned YADR_WIDTH = 6,
+    parameter  int unsigned ADDR_WIDTH = XADR_WIDTH + YADR_WIDTH + $clog2(DATA_WIDTH/8)
+)(
+    // system signals
+    input  logic clk,
+    input  logic rst,
+    // system bus
+    input  logic                  bus_req_valid,
+    input  logic [ADDR_WIDTH-1:0] bus_req_addr ,  // byte address
+    output logic                  bus_req_ready,
+    output logic [DATA_WIDTH-1:0] bus_rdt_data    // read data
+);
+
+    // FSM states encode signals {ready, SE, [X/Y]E}
+    localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
+    localparam bit [3-1:0] FSM_ADDR = 3'b001;  // drive address
+    localparam bit [3-1:0] FSM_SE   = 3'b011;  // SE active
+    localparam bit [3-1:0] FSM_SMPL = 3'b101;  // sample
+
+    logic [3-1:0] fsm_state;
+
+    // embedded flash controller interface signals
+    logic [DATA_WIDTH-1:0] flash_dout;
+    logic [DATA_WIDTH-1:0] flash_din;
+    logic [XADR_WIDTH-1:0] flash_xadr;
+    logic [YADR_WIDTH-1:0] flash_yadr;
+    logic                  flash_xe;
+    logic                  flash_ye;
+    logic                  flash_se;
+    logic                  flash_prog;
+    logic                  flash_erase;
+    logic                  flash_nvstr;
+
+    always_ff @(posedge clk, posedge rst)
+    if (rst) begin
+        fsm_state <= FSM_IDLE;
+    end else begin
+        case (fsm_state)
+            FSM_IDLE: begin
+                if (bus_req_valid)  fsm_state <= FSM_ADDR;
+            end
+            FSM_ADDR: begin
+                fsm_state <= FSM_SE;
+            end
+            FSM_SE  : begin
+                fsm_state <= FSM_SMPL;
+            end
+            FSM_SMPL: begin
+                fsm_state <= FSM_IDLE;
+            end
+            default: begin end
+        endcase
+    end
+
+    // sample the request address
+    always_ff @(posedge clk)
+    if (bus_req_valid) begin
+        flash_xadr <= bus_req_addr[$clog2(DATA_WIDTH/8)+YADR_WIDTH+:XADR_WIDTH];
+        flash_yadr <= bus_req_addr[$clog2(DATA_WIDTH/8)           +:YADR_WIDTH];
+    end
+
+    // sample the response data
+    always_ff @(posedge clk)
+    if (bus_req_valid) begin
+        bus_req_addr <= flash_dout;
+    end
+
+    // FSM states encode signals {ready, SE, [X/Y]E}
+    assign flash_xe = fsm_state[0];
+    assign flash_ye = fsm_state[0];
+    assign flash_se = fsm_state[1];
+
+    assign bus_req_ready = fsm_state[2];
+
+    // embedded flash interface instance
+    FLASH608K flash (
+        .XADR  (flash_xadr),
+        .YADR  (flash_yadr),
+        .XE    (flash_xe),
+        .YE    (flash_ye),
+        .SE    (flash_se),
+        .ERASE (flash_erase),
+        .PROG  (flash_prog),
+        .NVSTR (flash_nvstr),
+        .DIN   (flash_din),
+        .DOUT  (flash_dout)
+    );
+
+endmodule: embedded_flash_controller

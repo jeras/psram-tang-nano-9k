@@ -1,6 +1,12 @@
+///////////////////////////////////////////////////////////////////////////////
 // n-way set associative cache
 // compatible with custom PHY interface
-// TODO: license
+//
+// Copyright 2026 Iztok Jeras <iztok.jeras@gmail.com>
+//
+// Licensed under CERN-OHL-P v2 or later
+///////////////////////////////////////////////////////////////////////////////
+
 
 module hyperram_cache #(
     // system bus and memory parameters
