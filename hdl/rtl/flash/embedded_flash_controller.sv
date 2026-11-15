@@ -7,6 +7,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 module embedded_flash_controller #(
+    parameter  int unsigned SIZE = 608_000 / 32,
     parameter  int unsigned DATA_WIDTH = 32,
     parameter  int unsigned XADR_WIDTH = 9,
     parameter  int unsigned YADR_WIDTH = 6,
@@ -73,7 +74,7 @@ module embedded_flash_controller #(
     // sample the response data
     always_ff @(posedge clk)
     if (bus_req_valid) begin
-        bus_req_addr <= flash_dout;
+        bus_rdt_data <= flash_dout;
     end
 
     // FSM states encode signals {ready, SE, [X/Y]E}
