@@ -37,7 +37,7 @@ module uart_model #(
 //  output logic DCD,  // Carrier Detect
 //  output logic RI,   // Ring Indicator
     output logic TXD,  // Transmitted Data
-    input  logic RXD   // Received Data
+    input  wire  RXD   // Received Data
 );
 
 ////////////////////////////////////////////////////////////////////////////////

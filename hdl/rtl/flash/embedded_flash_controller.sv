@@ -39,9 +39,9 @@ module embedded_flash_controller #(
     logic                  flash_xe;
     logic                  flash_ye;
     logic                  flash_se;
-    logic                  flash_prog;
-    logic                  flash_erase;
-    logic                  flash_nvstr;
+    logic                  flash_prog  = 1'b0;
+    logic                  flash_erase = 1'b0;
+    logic                  flash_nvstr = 1'b0;
 
     always_ff @(posedge clk, posedge rst)
     if (rst) begin
@@ -73,7 +73,7 @@ module embedded_flash_controller #(
 
     // sample the response data
     always_ff @(posedge clk)
-    if (bus_req_valid) begin
+    if (bus_req_valid & bus_req_ready) begin
         bus_rdt_data <= flash_dout;
     end
 

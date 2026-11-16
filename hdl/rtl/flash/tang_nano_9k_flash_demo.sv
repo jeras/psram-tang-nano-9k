@@ -8,12 +8,14 @@
 
 module tang_nano_9k_flash_demo #(
     // 4kB or 2*DPB (each DPB is 16kb organized as 16-bit 2k locations)
-    parameter  int unsigned TEST_SIZE = 4*1024
+    parameter  int unsigned TEST_SIZE = 4*1024,
+    // UART baudrate
+    parameter longint       BAUDRATE = 115_200
 )(
     input  logic       XTAL_IN,
     input  logic [2:1] S,
     output logic [6:1] LED,
-    output logic       FPGA_TX
+    output wire        FPGA_TX
 );
 
     // system local parameters
@@ -27,8 +29,6 @@ module tang_nano_9k_flash_demo #(
     localparam int unsigned BYTE_WIDTH = DATA_WIDTH/8;
 
     // test FSM
-    localparam int unsigned CNT_WIDTH = TEST_SIZE + 1;  // counted in nibbles
-
     localparam bit [2-1:0] FSM_READ = 2'b00;  // read flash into SRAM
     localparam bit [2-1:0] FSM_SEND = 2'b01;  // send data from SRAM to UART
     localparam bit [2-1:0] FSM_IDLE = 2'b10;  // idle
@@ -37,19 +37,23 @@ module tang_nano_9k_flash_demo #(
     logic clk;
     logic rst;
 
+    // run button
+    logic run;
+    logic run_btn;
+    logic run_reg;
+
     // button debounce
     logic [2:1] btn;
 
     // test FSM
     logic          [2-1:0] fsm_state;
 
-    logic  [CNT_WIDTH-1:0] fsm_cnt;
-    logic  [CNT_WIDTH-1:0] fsm_cnt_nxt;
-    logic  [CNT_WIDTH-1:0] fsm_cnt_inc;
+    logic [ADDR_WIDTH-1:-1] fsm_cnt;
+    logic [ADDR_WIDTH-0:-1] fsm_cnt_nxt;
+    logic [ADDR_WIDTH-0:-1] fsm_cnt_inc;
 
     // Flash interface
     logic                  flash_req_transfer;
-    logic                  flash_req_delay;
 
     logic                  flash_req_valid;
     logic [ADDR_WIDTH-1:0] flash_req_addr ;
@@ -57,11 +61,11 @@ module tang_nano_9k_flash_demo #(
     logic [DATA_WIDTH-1:0] flash_rdt_data ;
 
     // dual port SRAM A port (write only)
-    logic [ADDR_WIDTH  -1:0]        sram_a_address;
+    logic [ADDR_WIDTH  -1:0]        sram_a_addr;
     logic                           sram_a_enable;
     logic [DATA_WIDTH/8-1:0][8-1:0] sram_a_wdata;
     // dual port SRAM B port (read only)
-    logic [ADDR_WIDTH  -1:0]        sram_b_address;
+    logic [ADDR_WIDTH  -1:0]        sram_b_addr;
     logic                           sram_b_enable;
     logic [DATA_WIDTH/8-1:0][8-1:0] sram_b_rdata;
 
@@ -85,7 +89,8 @@ module tang_nano_9k_flash_demo #(
 
         debounce #(
             .FREQ (FREQUENCY),
-            .TIME (DEBOUNCE_TIME)
+            .TIME (DEBOUNCE_TIME),
+            .INIT (1'b1)
         ) button (
             .clk  (clk),
             .d_i  (S[i]),
@@ -95,7 +100,19 @@ module tang_nano_9k_flash_demo #(
     end: buttons
     endgenerate
 
-    assign rst = btn[1];
+    // system reset
+    assign rst = ~btn[1];  // buttons are active low
+
+    // run button
+    assign run_btn = ~btn[2];  // buttons are active low
+
+    // start button register (delay)
+    always_ff @(posedge clk, posedge rst)
+    if (rst) run_reg <= 1'b0;
+    else     run_reg <= run_btn;
+
+    // run pulse
+    assign run = run_btn & ~run_reg;
 
 ///////////////////////////////////////////////////////////////////////////////
 // test FSM
@@ -127,6 +144,9 @@ module tang_nano_9k_flash_demo #(
             end
             // the default includes FSM_IDLE
             default: begin
+                if (run) begin
+                    fsm_state <= FSM_READ;
+                end
             end
         endcase
     end
@@ -137,10 +157,10 @@ module tang_nano_9k_flash_demo #(
     begin
         case (fsm_state)
             FSM_READ: begin
-                fsm_cnt_inc = CNT_WIDTH'(2*(DATA_WIDTH/8));
+                fsm_cnt_inc = (ADDR_WIDTH+1)'(2*(DATA_WIDTH/8));
             end
             FSM_SEND: begin
-                fsm_cnt_inc = CNT_WIDTH'(1);
+                fsm_cnt_inc = (ADDR_WIDTH+1)'(1);
             end
             default: begin
                 fsm_cnt_inc = 'x;
@@ -148,13 +168,16 @@ module tang_nano_9k_flash_demo #(
         endcase
     end
 
-    assign flash_req_valid = (fsm_state == FSM_READ);
-
 ///////////////////////////////////////////////////////////////////////////////
 // embedded flash controller instance
 ///////////////////////////////////////////////////////////////////////////////
 
-    embedded_flash_controller flash (
+    assign flash_req_valid = (fsm_state == FSM_READ);
+
+    assign flash_req_addr = fsm_cnt[ADDR_WIDTH-1:0];
+//    assign flash_req_addr = fsm_cnt[5:3];
+
+    embedded_flash_controller flash_ctrl (
         // system signals
         .clk  (clk),
         .rst  (rst),
@@ -167,13 +190,6 @@ module tang_nano_9k_flash_demo #(
 
     assign flash_req_transfer = flash_req_valid & flash_req_ready;
 
-    always_ff @(posedge clk, posedge rst)
-    if (rst) begin
-        flash_req_delay <= 1'b0;
-    end else begin
-        flash_req_delay <= flash_req_transfer;
-    end
-
 ///////////////////////////////////////////////////////////////////////////////
 // SRAM inference
 ///////////////////////////////////////////////////////////////////////////////
@@ -181,23 +197,28 @@ module tang_nano_9k_flash_demo #(
     logic [DATA_WIDTH/8-1:0][8-1:0] sram_mem [0:TEST_SIZE/(DATA_WIDTH/8)-1];
 
     // write port
-    assign sram_a_address = fsm_cnt[ADDR_WIDTH:$clog2(BYTE_WIDTH)+1];
-    assign sram_a_enable  = flash_req_delay;
-    assign sram_a_wdata   = flash_rdt_data;
+    always_ff @(posedge clk, posedge rst)
+    if (rst)  sram_a_enable <= 1'b0;
+    else      sram_a_enable <= flash_req_transfer;
+
+    always_ff @(posedge clk)
+    sram_a_addr <= flash_req_addr[ADDR_WIDTH-1:$clog2(BYTE_WIDTH)];
+
+    assign sram_a_wdata = flash_rdt_data;
 
     // read port
-    assign sram_b_address = fsm_cnt[ADDR_WIDTH:$clog2(BYTE_WIDTH)+1];
+    assign sram_b_addr = fsm_cnt[ADDR_WIDTH-1:$clog2(BYTE_WIDTH)];
     assign sram_b_enable  = 1'b1;
 
     always_ff @(posedge clk)
     begin
         // write port
         if (sram_a_enable) begin
-            sram_mem[sram_a_address] <= sram_a_wdata;
+            sram_mem[sram_a_addr] <= sram_a_wdata;
         end
         // read port
         if (sram_b_enable) begin
-            sram_b_rdata <= sram_mem[sram_b_address];
+            sram_b_rdata <= sram_mem[sram_b_addr];
         end
     end
 
@@ -205,25 +226,29 @@ module tang_nano_9k_flash_demo #(
 // UART instance
 ///////////////////////////////////////////////////////////////////////////////
 
+    localparam int unsigned CFG_BDR = int'(FREQUENCY/real'(BAUDRATE));
+    localparam int unsigned CFG_BDR_WIDTH = $clog2(CFG_BDR);
+
     assign uart_tx_transfer = uart_tx_valid & uart_tx_ready;
 
     always_ff @(posedge clk, posedge rst)
     if (rst) begin
-        uart_tx_valid = 1'b0;
-        uart_tx_data  = 'x;
+        uart_tx_valid <= 1'b0;
     end else begin
-        uart_tx_valid = (fsm_state == FSM_SEND);
-        uart_tx_data  = sram_b_rdata[sram_b_address[1+:$clog2(BYTE_WIDTH)]];
+        uart_tx_valid <= (fsm_state == FSM_SEND);
     end
 
+    assign uart_tx_data = sram_b_rdata[sram_b_addr[1+:$clog2(BYTE_WIDTH)]];
+
+
     uart_tx #(
-//        .BDR = 8,  // baudrate number width
+        .BDR (CFG_BDR_WIDTH)
     ) uart (  
         // system signals
         .clk     (clk),
         .rst     (rst),
         // configuration
-//        input  logic [BDR-1:0] cfg_bdr,  // baudrate
+        .cfg_bdr (CFG_BDR),
         // parallel stream
         .str_vld (uart_tx_valid),
         .str_dat (uart_tx_data ),

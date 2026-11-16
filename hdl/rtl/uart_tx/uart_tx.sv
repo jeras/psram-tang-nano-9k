@@ -31,7 +31,7 @@ module uart_tx #(
     input  logic [DAT-1:0] str_dat,  // data
     output logic           str_rdy,  // ready
     // serial TX output
-    output logic           txd
+    output wire            txd
 );
 
     // shift sequence length (start + data + stop)

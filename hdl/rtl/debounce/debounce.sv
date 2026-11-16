@@ -13,7 +13,11 @@ module debounce #(
     // initial value, can be same or opposite (causing a power-up pulse) to button idle state
     parameter bit  INIT = 1'b0, 
     // calculated local parameters
+`ifdef DEBUG
+    parameter  int unsigned CNT_LENGTH = 6,  // counter length
+`else
     parameter  int unsigned CNT_LENGTH = int'(FREQ * TIME),  // counter length
+`endif
     localparam int unsigned CNT_WIDTH = $clog2(CNT_LENGTH)   // counter width
 )(
   input  logic clk,  // clock
@@ -22,18 +26,15 @@ module debounce #(
 );
 
     // counter signals
-    logic [CNT_WIDTH-1:0] cnt;      // counter
-    logic [CNT_WIDTH-0:0] cnt_nxt;  // counter next
-    logic                 cnt_end;  // counter end
+    logic [CNT_WIDTH-1:0] cnt = 'd0;  // counter (power-up initial value for FPGA)
+    logic [CNT_WIDTH-0:0] cnt_nxt;    // counter next
+    logic                 cnt_end;    // counter end
 
     // data signals
     logic d_0 = INIT;  // input CDC register 0
     logic d_1 = INIT;  // input CDC register 1
     logic d_r = INIT;  // output register
     logic tgl;         // input toggle in relation to output
-
-    // power-up initial value for FPGA
-    initial cnt <= 'd0;
 
     // CDC to prevent metastability problems
     always_ff @(posedge clk)
