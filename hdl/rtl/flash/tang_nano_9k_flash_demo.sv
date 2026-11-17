@@ -118,6 +118,11 @@ module tang_nano_9k_flash_demo #(
     // run pulse
     assign run = run_btn & ~run_reg;
 
+    // LED-s
+    assign LED[1] = ~rst;            // reset signal
+    assign LED[2] = ~run;            // run button
+    assign LED[3] = ~uart_tx_valid;  // UART TX active
+
 ///////////////////////////////////////////////////////////////////////////////
 // test FSM
 ///////////////////////////////////////////////////////////////////////////////

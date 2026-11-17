@@ -6,6 +6,8 @@
 // Licensed under CERN-OHL-P v2 or later
 ///////////////////////////////////////////////////////////////////////////////
 
+`timescale 1ns/1ps
+
 module tang_nano_9k_flash_demo_tb #(
 `ifdef DEBUG
     parameter  int unsigned TEST_SIZE = 16,
@@ -58,9 +60,14 @@ module tang_nano_9k_flash_demo_tb #(
     
     // waveform dump
     initial begin
+`ifdef QUESTA
+        $dumpfile("tang_nano_9k_flash_demo_tb.vcd");
+        $dumpvars(0, tang_nano_9k_flash_demo_tb);
+`else
         $dumpfile("tang_nano_9k_flash_demo_tb.fst");
         $dumpvars(0, tang_nano_9k_flash_demo_tb);
         for (int i=0; i<4; i++) $dumpvars(0, demo.sram_mem[i]);
+`endif
     end
 
     // Flash array initialization
