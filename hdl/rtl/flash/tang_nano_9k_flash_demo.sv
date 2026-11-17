@@ -70,11 +70,15 @@ module tang_nano_9k_flash_demo #(
     logic [DATA_WIDTH/8-1:0][8-1:0] sram_b_rdata;
 
     // UART TX signals
-    logic         uart_tx_valid;
-    logic [8-1:0] uart_tx_data;
-    logic         uart_tx_ready;
+    logic                uart_tx_valid;
+    logic                uart_tx_ready;
 
-    logic         uart_tx_transfer;
+    logic                uart_tx_transfer;
+
+    logic [$clog2(BYTE_WIDTH)-1:-1] uart_tx_off;  // nibble offset
+
+    logic [2-1:0][4-1:0] uart_tx_byte;   // raw byte data
+    logic        [8-1:0] uart_tx_char;   // ASCII character for a hexadecimal value of a nibble
 
 ///////////////////////////////////////////////////////////////////////////////
 // system signals
@@ -226,6 +230,9 @@ module tang_nano_9k_flash_demo #(
 // UART instance
 ///////////////////////////////////////////////////////////////////////////////
 
+    // table containing ASCII values for each hexadecimal (nibble) value
+    byte ascii_table [0:16-1] = '{"0", "1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"};
+
     localparam int unsigned CFG_BDR = int'(FREQUENCY/real'(BAUDRATE));
     localparam int unsigned CFG_BDR_WIDTH = $clog2(CFG_BDR);
 
@@ -238,12 +245,16 @@ module tang_nano_9k_flash_demo #(
         uart_tx_valid <= (fsm_state == FSM_SEND);
     end
 
-    assign uart_tx_data = sram_b_rdata[sram_b_addr[1+:$clog2(BYTE_WIDTH)]];
+    // extract a single byte from the data word
+    assign uart_tx_off  = fsm_cnt[$clog2(BYTE_WIDTH)-1:-1];
+    assign uart_tx_byte = sram_b_rdata[uart_tx_off[$clog2(BYTE_WIDTH)-1:0]];
 
+    // convert a nibble into an ASCII character
+    assign uart_tx_char = ascii_table[uart_tx_byte[~uart_tx_off[-1]]];
 
     uart_tx #(
         .BDR (CFG_BDR_WIDTH)
-    ) uart (  
+    ) uart (
         // system signals
         .clk     (clk),
         .rst     (rst),
@@ -251,7 +262,7 @@ module tang_nano_9k_flash_demo #(
         .cfg_bdr (CFG_BDR),
         // parallel stream
         .str_vld (uart_tx_valid),
-        .str_dat (uart_tx_data ),
+        .str_dat (uart_tx_char ),
         .str_rdy (uart_tx_ready),
         // serial TX output
         .txd     (FPGA_TX)
