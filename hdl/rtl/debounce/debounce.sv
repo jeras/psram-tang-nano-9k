@@ -8,16 +8,12 @@
 
 module debounce #(
     // timing parameters
-    parameter real FREQ = 27_000_000,  // 27MHz
-    parameter real TIME = 0.010,       // 10ms
+    parameter real     FREQ = 27_000_000,  // 27MHz
+    parameter realtime TIME = 10ms,        // 10ms
     // initial value, can be same or opposite (causing a power-up pulse) to button idle state
-    parameter bit  INIT = 1'b0, 
+    parameter bit      INIT = 1'b0, 
     // calculated local parameters
-`ifdef DEBUG
-    parameter  int unsigned CNT_LENGTH = 6,  // counter length
-`else
     parameter  int unsigned CNT_LENGTH = int'(FREQ * TIME),  // counter length
-`endif
     localparam int unsigned CNT_WIDTH = $clog2(CNT_LENGTH)   // counter width
 )(
   input  logic clk,  // clock

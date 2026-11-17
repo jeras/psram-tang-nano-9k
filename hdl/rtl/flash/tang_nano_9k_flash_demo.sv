@@ -94,6 +94,10 @@ module tang_nano_9k_flash_demo #(
         debounce #(
             .FREQ (FREQUENCY),
             .TIME (DEBOUNCE_TIME),
+`ifdef DEBUG
+            // the DEBUG option avoids long simulation times
+            .CNT_LENGTH (6)
+`endif
             .INIT (1'b1)
         ) button (
             .clk  (clk),

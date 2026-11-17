@@ -25,12 +25,11 @@ module tang_nano_9k_flash_demo_tb #(
     wire  [6:1] LED;
     wire        FPGA_TX;
 
-    localparam time XTAL_PERIOD = (1/27)*1ns;
+    localparam realtime XTAL_PERIOD = 1s / 27_000_000;
 
     // clock source
     initial                  XTAL_IN = 1'b1;
-//  always #(XTAL_PERIOD/2)  XTAL_IN = ~XTAL_IN;
-    always #37ns  XTAL_IN = ~XTAL_IN;
+    always #(XTAL_PERIOD/2)  XTAL_IN = ~XTAL_IN;
 
     // button press
     initial begin
