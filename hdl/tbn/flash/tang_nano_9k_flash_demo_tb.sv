@@ -39,6 +39,8 @@ module tang_nano_9k_flash_demo_tb #(
         S[1] <= 1'b0;
         repeat(4)  @(posedge XTAL_IN);
         S[1] <= 1'b1;
+        // UART dump enable
+        uart.start("", "uart_rx.txt");
         // short "run" button press
         repeat(8)  @(posedge XTAL_IN);
         S[2] <= 1'b0;
@@ -56,7 +58,7 @@ module tang_nano_9k_flash_demo_tb #(
         repeat(2000)  @(posedge XTAL_IN);
         $finish();
     end
-    
+
     // waveform dump
     initial begin
 `ifdef QUESTA
@@ -91,14 +93,10 @@ module tang_nano_9k_flash_demo_tb #(
 
     // UART model (receiver)
     uart_model #(
-        .BAUD   (BAUDRATE),
-        // data streams
-        .FILE_O ("test_report.txt")
+        .BAUDRATE (BAUDRATE)
     ) uart (
         .TXD (),
         .RXD (FPGA_TX)
     );
-
-    pullup(FPGA_TX);
 
 endmodule: tang_nano_9k_flash_demo_tb

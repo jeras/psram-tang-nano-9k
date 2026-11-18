@@ -19,8 +19,8 @@ module tang_nano_9k_flash_demo #(
 );
 
     // system local parameters
-    localparam real FREQUENCY = 27_000_000;  // 27MHz
-    localparam real DEBOUNCE_TIME = 0.010;  // 10ms
+    localparam real     FREQUENCY = 27_000_000;  // 27MHz
+    localparam realtime DEBOUNCE_TIME = 10ms;  // 10ms
 
     // byte address width
     localparam int unsigned ADDR_WIDTH = $clog2(TEST_SIZE);
@@ -37,10 +37,10 @@ module tang_nano_9k_flash_demo #(
     logic clk;
     logic rst;
 
-    // run button
-    logic run;
-    logic run_btn;
-    logic run_reg;
+    // start button
+    logic start;
+    logic start_btn;
+    logic start_reg;
 
     // button debounce
     logic [2:1] btn;
@@ -96,7 +96,7 @@ module tang_nano_9k_flash_demo #(
             .TIME (DEBOUNCE_TIME),
 `ifdef DEBUG
             // the DEBUG option avoids long simulation times
-            .CNT_LENGTH (6)
+            .CNT_LENGTH (6),
 `endif
             .INIT (1'b1)
         ) button (
@@ -111,20 +111,20 @@ module tang_nano_9k_flash_demo #(
     // system reset
     assign rst = ~btn[1];  // buttons are active low
 
-    // run button
-    assign run_btn = ~btn[2];  // buttons are active low
+    // start button
+    assign start_btn = ~btn[2];  // buttons are active low
 
     // start button register (delay)
     always_ff @(posedge clk, posedge rst)
-    if (rst) run_reg <= 1'b0;
-    else     run_reg <= run_btn;
+    if (rst) start_reg <= 1'b0;
+    else     start_reg <= start_btn;
 
-    // run pulse
-    assign run = run_btn & ~run_reg;
+    // start pulse
+    assign start = start_btn & ~start_reg;
 
     // LED-s
     assign LED[1] = ~rst;            // reset signal
-    assign LED[2] = ~run;            // run button
+    assign LED[2] = ~start;          // start button
     assign LED[3] = ~uart_tx_valid;  // UART TX active
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -157,7 +157,7 @@ module tang_nano_9k_flash_demo #(
             end
             // the default includes FSM_IDLE
             default: begin
-                if (run) begin
+                if (start) begin
                     fsm_state <= FSM_READ;
                 end
             end
@@ -242,8 +242,8 @@ module tang_nano_9k_flash_demo #(
     // table containing ASCII values for each hexadecimal (nibble) value
     byte ascii_table [0:16-1] = '{"0", "1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"};
 
-    localparam int unsigned CFG_BDR = int'(FREQUENCY/real'(BAUDRATE));
-    localparam int unsigned CFG_BDR_WIDTH = $clog2(CFG_BDR);
+    localparam int unsigned BAUD_RATE = int'(FREQUENCY/real'(BAUDRATE))-1;
+    localparam int unsigned BAUD_WIDTH = $clog2(BAUD_RATE);
 
     assign uart_tx_transfer = uart_tx_valid & uart_tx_ready;
 
@@ -262,13 +262,13 @@ module tang_nano_9k_flash_demo #(
     assign uart_tx_char = ascii_table[uart_tx_byte[~uart_tx_off[-1]]];
 
     uart_tx #(
-        .BDR (CFG_BDR_WIDTH)
+        .BAUD_WIDTH (BAUD_WIDTH)
     ) uart (
         // system signals
         .clk     (clk),
         .rst     (rst),
         // configuration
-        .cfg_bdr (CFG_BDR),
+        .cfg_bdr (BAUD_RATE[BAUD_WIDTH-1:0]),
         // parallel stream
         .str_vld (uart_tx_valid),
         .str_dat (uart_tx_char ),

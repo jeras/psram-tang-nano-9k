@@ -11,7 +11,7 @@ module debounce #(
     parameter real     FREQ = 27_000_000,  // 27MHz
     parameter realtime TIME = 10ms,        // 10ms
     // initial value, can be same or opposite (causing a power-up pulse) to button idle state
-    parameter bit      INIT = 1'b0, 
+    parameter bit      INIT = 1'b0,
     // calculated local parameters
     parameter  int unsigned CNT_LENGTH = int'(FREQ * TIME),  // counter length
     localparam int unsigned CNT_WIDTH = $clog2(CNT_LENGTH)   // counter width
@@ -48,7 +48,7 @@ module debounce #(
     // the counter should start running on a toggle
     always_ff @(posedge clk)
     if (~cnt_end)  cnt <= cnt_nxt;
-    else if (tgl)  cnt <= CNT_LENGTH;
+    else if (tgl)  cnt <= CNT_LENGTH[CNT_WIDTH-1:0];
 
     // when the counter is zero the output should follow the input
     always @ (posedge clk)
