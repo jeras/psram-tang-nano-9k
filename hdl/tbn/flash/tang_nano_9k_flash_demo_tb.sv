@@ -34,20 +34,36 @@ module tang_nano_9k_flash_demo_tb #(
     // button press
     initial begin
         S <= 2'b11;
+  
+//        // short "reset" button press
+//        repeat(8)  @(posedge XTAL_IN);
+//        S[1] <= 1'b0;
+//        repeat(4)  @(posedge XTAL_IN);
+//        S[1] <= 1'b1;
+
         // short "reset" button press
-        repeat(8)  @(posedge XTAL_IN);
+        #20ms;
         S[1] <= 1'b0;
-        repeat(4)  @(posedge XTAL_IN);
+        #20ms;
         S[1] <= 1'b1;
+        
         // UART dump enable
         uart.start("", "uart_rx.txt");
+  
         // short "run" button press
         repeat(8)  @(posedge XTAL_IN);
         S[2] <= 1'b0;
         repeat(4)  @(posedge XTAL_IN);
         S[2] <= 1'b1;
+
+        // short "run" button press
+        #20ms;
+        S[2] <= 1'b0;
+        #20ms;
+        S[2] <= 1'b1;
+        
         // wait for LED to indicate the end of the test
-        @(negedge LED[1])
+        @(negedge LED[3])
         repeat(4)  @(posedge XTAL_IN);
         // end simulation
         $finish();
@@ -55,7 +71,11 @@ module tang_nano_9k_flash_demo_tb #(
 
     // simulation timeout for debugging purposes
     initial begin
+`ifdef DEBUG
         repeat(2000)  @(posedge XTAL_IN);
+`else
+        #1000ms;
+`endif
         $finish();
     end
 

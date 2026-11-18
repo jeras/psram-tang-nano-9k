@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 
-iverilog -g2023 -DDEBUG \
+#iverilog -g2023 -DDEBUG \
+iverilog -g2023 \
 -o tang_nano_9k_flash_demo_tb \
 -s tang_nano_9k_flash_demo_tb \
 -l /opt/Gowin/Gowin_V1.9.12.04_linux/IDE/simlib/gw1n/prim_sim.v \

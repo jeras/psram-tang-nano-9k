@@ -10,17 +10,17 @@ module tang_nano_9k_flash_demo #(
     // 4kB or 2*DPB (each DPB is 16kb organized as 16-bit 2k locations)
     parameter  int unsigned TEST_SIZE = 4*1024,
     // UART baudrate
-    parameter longint       BAUDRATE = 115_200
+    parameter longint       BAUDRATE = 115_200,
+    // oscillator frequency
+    localparam real         FREQUENCY = 27_000_000,  // 27MHz
+    // debounce counter length (frequency * time)
+    localparam int unsigned DEBOUNCE_LENGTH = 270000  // 27MHz * 10ms
 )(
     input  logic       XTAL_IN,
     input  logic [2:1] S,
     output logic [6:1] LED,
     output wire        FPGA_TX
 );
-
-    // system local parameters
-    localparam real     FREQUENCY = 27_000_000;  // 27MHz
-    localparam realtime DEBOUNCE_TIME = 10ms;  // 10ms
 
     // byte address width
     localparam int unsigned ADDR_WIDTH = $clog2(TEST_SIZE);
@@ -92,13 +92,9 @@ module tang_nano_9k_flash_demo #(
     for (genvar i=1; i<=2; i++) begin: buttons
 
         debounce #(
-            .FREQ (FREQUENCY),
-            .TIME (DEBOUNCE_TIME),
-`ifdef DEBUG
-            // the DEBUG option avoids long simulation times
-            .CNT_LENGTH (6),
-`endif
-            .INIT (1'b1)
+            .INIT       (1'b1),
+            // timing parameters
+            .CNT_LENGTH (DEBOUNCE_LENGTH)
         ) button (
             .clk  (clk),
             .d_i  (S[i]),
