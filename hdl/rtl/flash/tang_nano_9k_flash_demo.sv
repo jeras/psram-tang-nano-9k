@@ -203,7 +203,7 @@ module tang_nano_9k_flash_demo #(
 // SRAM inference
 ///////////////////////////////////////////////////////////////////////////////
 
-    logic [DATA_WIDTH/8-1:0][8-1:0] sram_mem [0:TEST_SIZE/(DATA_WIDTH/8)-1];
+    logic [DATA_WIDTH-1:0] sram_mem [0:TEST_SIZE/(DATA_WIDTH/8)-1];
 
     // write port
     always_ff @(posedge clk, posedge rst)
@@ -226,9 +226,7 @@ module tang_nano_9k_flash_demo #(
             sram_mem[sram_a_addr] <= sram_a_wdata;
         end
         // read port
-        if (sram_b_enable) begin
-            sram_b_rdata <= sram_mem[sram_b_addr];
-        end
+        sram_b_rdata <= sram_mem[sram_b_addr];
     end
 
 ///////////////////////////////////////////////////////////////////////////////

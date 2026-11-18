@@ -10,7 +10,8 @@ export QT_FONT_DPI=144
 
 #export QT_QPA_PLATFORM=wayland
 
-export GOWIN_PATH=/home/$USER/VLSI/Gowin_V1.9.12.04_linux
+#export GOWIN_PATH=/opt/Gowin/Gowin_V1.9.12.04_linux
+export GOWIN_PATH=/opt/Gowin/Gowin_V1.9.11.03_Education_Linux
 export LD_LIBRARY_PATH=$GOWIN_PATH/IDE/lib;
 export PATH=$PATH:$GOWIN_PATH/Programmer/bin/
 export LD_PRELOAD="/lib/x86_64-linux-gnu/libfreetype.so.6 /usr/lib/x86_64-linux-gnu/libz.so.1"
