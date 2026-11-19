@@ -7,8 +7,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 module tang_nano_9k_flash_demo #(
-    // 4kB or 2*DPB (each DPB is 16kb organized as 16-bit 2k locations)
-    parameter  int unsigned TEST_SIZE = 4*1024,
+    // 4kB or 2*DPB (each DPB is 16kb organized as 2k 16-bit locations)
+    parameter  int unsigned TEST_SIZE = 304*64*4,
+    parameter  int unsigned SRAM_SIZE = 4*1024,
     // UART baudrate
     parameter longint       BAUDRATE = 115_200,
     // oscillator frequency
@@ -25,6 +26,7 @@ module tang_nano_9k_flash_demo #(
 
     // byte address width
     localparam int unsigned ADDR_WIDTH = $clog2(TEST_SIZE);
+    localparam int unsigned SRAM_WIDTH = $clog2(SRAM_SIZE);
     // data width (based on flash data bus width)
     localparam int unsigned DATA_WIDTH = 32;
     localparam int unsigned BYTE_WIDTH = DATA_WIDTH/8;
@@ -54,8 +56,8 @@ module tang_nano_9k_flash_demo #(
     logic          [2-1:0] fsm_state;
 
     logic [ADDR_WIDTH-1:0] fsm_cnt;
-    logic [ADDR_WIDTH-0:0] fsm_cnt_nxt;
-    logic [ADDR_WIDTH-0:0] fsm_cnt_inc;
+    logic [ADDR_WIDTH-0:0] fsm_cnt_nxt_read;
+    logic [ADDR_WIDTH-0:0] fsm_cnt_nxt_send;
 
     // Flash interface
     logic                  flash_req_transfer;
@@ -66,11 +68,11 @@ module tang_nano_9k_flash_demo #(
     logic [DATA_WIDTH-1:0] flash_rdt_data ;
 
     // dual port SRAM A port (write only)
-    logic [ADDR_WIDTH  -1:0]        sram_a_addr;
+    logic [SRAM_WIDTH  -1:0]        sram_a_addr;
     logic                           sram_a_enable;
     logic [DATA_WIDTH/8-1:0][8-1:0] sram_a_wdata;
     // dual port SRAM B port (read only)
-    logic [ADDR_WIDTH  -1:0]        sram_b_addr;
+    logic [SRAM_WIDTH  -1:0]        sram_b_addr;
     logic                           sram_b_enable;
     logic [DATA_WIDTH/8-1:0][8-1:0] sram_b_rdata;
 
@@ -143,21 +145,21 @@ module tang_nano_9k_flash_demo #(
         case (fsm_state)
             FSM_READ:
             if (flash_req_transfer) begin
-                if (fsm_cnt_nxt == TEST_SIZE) begin
+                if (fsm_cnt_nxt_read[SRAM_WIDTH-1:0] == 0) begin
                     fsm_state <= FSM_SEND;
-                    fsm_cnt <= 'd0;
-                end else begin
-                    fsm_cnt <= fsm_cnt_nxt;
                 end
+                fsm_cnt <= fsm_cnt_nxt_read;
             end
             FSM_SEND:
             if (uart_tx_transfer) begin
-                if (fsm_cnt_nxt == TEST_SIZE) begin
-                    fsm_state <= FSM_IDLE;
-                    fsm_cnt <= 'd0;
-                end else begin
-                    fsm_cnt <= fsm_cnt_nxt;
+                if (fsm_cnt_nxt_send[SRAM_WIDTH-1:0] == 0) begin
+                    if (fsm_cnt_nxt_send == TEST_SIZE) begin
+                        fsm_state <= FSM_IDLE;
+                    end else begin
+                        fsm_state <= FSM_READ;
+                    end
                 end
+                fsm_cnt <= fsm_cnt_nxt_send;
             end
             // the default includes FSM_IDLE
             default: begin
@@ -168,22 +170,8 @@ module tang_nano_9k_flash_demo #(
         endcase
     end
 
-    assign fsm_cnt_nxt = fsm_cnt + fsm_cnt_inc;
-
-    always_comb
-    begin
-        case (fsm_state)
-            FSM_READ: begin
-                fsm_cnt_inc = (ADDR_WIDTH)'(DATA_WIDTH/8);
-            end
-            FSM_SEND: begin
-                fsm_cnt_inc = (ADDR_WIDTH)'(1);
-            end
-            default: begin
-                fsm_cnt_inc = 'x;
-            end
-        endcase
-    end
+    assign fsm_cnt_nxt_read = {1'b0, fsm_cnt[ADDR_WIDTH-1:SRAM_WIDTH], SRAM_WIDTH'(fsm_cnt[SRAM_WIDTH-1:0] + (SRAM_WIDTH)'(DATA_WIDTH/8))};
+    assign fsm_cnt_nxt_send = {1'b0, fsm_cnt} + (ADDR_WIDTH+1)'(1);
 
 ///////////////////////////////////////////////////////////////////////////////
 // embedded flash controller instance
@@ -192,7 +180,6 @@ module tang_nano_9k_flash_demo #(
     assign flash_req_valid = (fsm_state == FSM_READ);
 
     assign flash_req_addr = fsm_cnt[ADDR_WIDTH-1:0];
-//    assign flash_req_addr = fsm_cnt[5:3];
 
     embedded_flash_controller flash_ctrl (
         // system signals
@@ -211,7 +198,7 @@ module tang_nano_9k_flash_demo #(
 // SRAM inference
 ///////////////////////////////////////////////////////////////////////////////
 
-    logic [DATA_WIDTH-1:0] sram_mem [0:TEST_SIZE/(DATA_WIDTH/8)-1];
+    logic [DATA_WIDTH-1:0] sram_mem [0:SRAM_SIZE/(DATA_WIDTH/8)-1];
 
     // write port
     always_ff @(posedge clk, posedge rst)
@@ -219,12 +206,12 @@ module tang_nano_9k_flash_demo #(
     else      sram_a_enable <= flash_req_transfer;
 
     always_ff @(posedge clk)
-    sram_a_addr <= flash_req_addr[ADDR_WIDTH-1:$clog2(BYTE_WIDTH)];
+    sram_a_addr <= flash_req_addr[SRAM_WIDTH-1:$clog2(BYTE_WIDTH)];
 
     assign sram_a_wdata = flash_rdt_data;
 
     // read port
-    assign sram_b_addr = fsm_cnt[ADDR_WIDTH-1:$clog2(BYTE_WIDTH)];
+    assign sram_b_addr = fsm_cnt[SRAM_WIDTH-1:$clog2(BYTE_WIDTH)];
     assign sram_b_enable  = 1'b1;
 
     always_ff @(posedge clk)

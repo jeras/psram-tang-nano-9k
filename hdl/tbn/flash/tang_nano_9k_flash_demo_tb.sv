@@ -13,10 +13,11 @@ module tang_nano_9k_flash_demo_tb #(
     parameter  int unsigned TEST_SIZE = 16,
     parameter longint       BAUDRATE = 27_000_000/13
 `else
-    // 4kB or 2*DPB (each DPB is 16kb organized as 16-bit 2k locations)
-    parameter  int unsigned TEST_SIZE = 4*1024,
+    parameter  int unsigned TEST_SIZE = 304*64*4,
     // UART baudrate
-    parameter longint       BAUDRATE = 115_200
+//  parameter  longint      BAUDRATE = 115_200
+//  parameter  longint      BAUDRATE = 230_400
+    parameter  longint      BAUDRATE = 1_000_000
 `endif
 );
 
@@ -80,7 +81,7 @@ module tang_nano_9k_flash_demo_tb #(
 `ifdef DEBUG
         repeat(2000)  @(posedge XTAL_IN);
 `else
-        #1000ms;
+        #2000ms;
 `endif
         $finish();
     end
