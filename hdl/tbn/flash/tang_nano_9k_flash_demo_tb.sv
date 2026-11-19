@@ -102,7 +102,7 @@ module tang_nano_9k_flash_demo_tb #(
         int flash_file;
         int status;  // status[8-1:0] contains a character from the file
         bit [4-1:0][8-1:0] data;
-        flash_file = $fopen("lorem_ipsum.txt", "rb");
+        flash_file = $fopen("incrementing_lines.txt", "rb");
         for (int unsigned x=0; x<304; x++) begin
             for (int unsigned y=0; y<64; y++) begin
                 // filling a word from the file (little endian)

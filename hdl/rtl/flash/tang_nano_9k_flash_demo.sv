@@ -255,13 +255,13 @@ module tang_nano_9k_flash_demo #(
     // deserializer
     tcb_dev_uart_des #(
         .BAUD_WIDTH (BAUD_WIDTH)
-    ) rx_des (
+    ) uart_rx (
         // system signals
         .clk     (clk),
         .rst     (rst),
         // configuration
-        .cfg_bdr (BAUD_RATE[BAUD_WIDTH-1:0]-BAUD_WIDTH'(1)),
-        .cfg_smp (BAUD_RATE[BAUD_WIDTH-1:0]-BAUD_WIDTH'(1)),
+        .cfg_bdr (BAUD_RATE[BAUD_WIDTH-1:0]  -BAUD_WIDTH'(1)),
+        .cfg_smp (BAUD_RATE[BAUD_WIDTH-1:0]/2-BAUD_WIDTH'(1)),
         // parallel stream
         .str_vld (uart_rx_valid),
         .str_dat (uart_rx_data ),
@@ -289,7 +289,7 @@ module tang_nano_9k_flash_demo #(
     // serializer
     tcb_dev_uart_ser #(
         .BAUD_WIDTH (BAUD_WIDTH)
-    ) uart (
+    ) uart_tx (
         // system signals
         .clk     (clk),
         .rst     (rst),

@@ -10,7 +10,7 @@ qrun -suppress 14408 -suppress 16154 -voptargs=+acc \
 ../../hdl/rtl/flash/embedded_flash_controller.sv \
 ../../hdl/rtl/flash/tang_nano_9k_flash_demo.sv \
 ../../hdl/tbn/flash/tang_nano_9k_flash_demo_tb.sv \
--do "run 600us"
+-do "run 1000ms"
 
 #-gui \
 #-do cmd.do
