@@ -53,9 +53,9 @@ module tang_nano_9k_flash_demo #(
     // test FSM
     logic          [2-1:0] fsm_state;
 
-    logic [ADDR_WIDTH-1:-1] fsm_cnt;
-    logic [ADDR_WIDTH-0:-1] fsm_cnt_nxt;
-    logic [ADDR_WIDTH-0:-1] fsm_cnt_inc;
+    logic [ADDR_WIDTH-1:0] fsm_cnt;
+    logic [ADDR_WIDTH-0:0] fsm_cnt_nxt;
+    logic [ADDR_WIDTH-0:0] fsm_cnt_inc;
 
     // Flash interface
     logic                  flash_req_transfer;
@@ -86,9 +86,7 @@ module tang_nano_9k_flash_demo #(
     logic                uart_tx_ready;
     logic                uart_tx_transfer;
 
-    logic [$clog2(BYTE_WIDTH)-1:-1] uart_tx_off;  // nibble offset
-
-    logic [2-1:0][4-1:0] uart_tx_byte;   // raw byte data
+    logic [$clog2(BYTE_WIDTH)-1:0] uart_tx_off;  // nibble offset
 
 ///////////////////////////////////////////////////////////////////////////////
 // system signals
@@ -145,7 +143,7 @@ module tang_nano_9k_flash_demo #(
         case (fsm_state)
             FSM_READ:
             if (flash_req_transfer) begin
-                if (fsm_cnt_nxt == TEST_SIZE*2) begin
+                if (fsm_cnt_nxt == TEST_SIZE) begin
                     fsm_state <= FSM_SEND;
                     fsm_cnt <= 'd0;
                 end else begin
@@ -154,7 +152,7 @@ module tang_nano_9k_flash_demo #(
             end
             FSM_SEND:
             if (uart_tx_transfer) begin
-                if (fsm_cnt_nxt == TEST_SIZE*2) begin
+                if (fsm_cnt_nxt == TEST_SIZE) begin
                     fsm_state <= FSM_IDLE;
                     fsm_cnt <= 'd0;
                 end else begin
@@ -176,10 +174,10 @@ module tang_nano_9k_flash_demo #(
     begin
         case (fsm_state)
             FSM_READ: begin
-                fsm_cnt_inc = (ADDR_WIDTH+1)'(2*(DATA_WIDTH/8));
+                fsm_cnt_inc = (ADDR_WIDTH)'(DATA_WIDTH/8);
             end
             FSM_SEND: begin
-                fsm_cnt_inc = (ADDR_WIDTH+1)'(1);
+                fsm_cnt_inc = (ADDR_WIDTH)'(1);
             end
             default: begin
                 fsm_cnt_inc = 'x;
@@ -275,9 +273,6 @@ module tang_nano_9k_flash_demo #(
 // UART TX instance
 ///////////////////////////////////////////////////////////////////////////////
 
-    // table containing ASCII values for each hexadecimal (nibble) value
-    byte ascii_table [0:16-1] = '{"0", "1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"};
-
     assign uart_tx_transfer = uart_tx_valid & uart_tx_ready;
 
     always_ff @(posedge clk, posedge rst)
@@ -288,11 +283,8 @@ module tang_nano_9k_flash_demo #(
     end
 
     // extract a single byte from the data word
-    assign uart_tx_off  = fsm_cnt[$clog2(BYTE_WIDTH)-1:-1];
-    assign uart_tx_byte = sram_b_rdata[uart_tx_off[$clog2(BYTE_WIDTH)-1:0]];
-
-    // convert a nibble into an ASCII character
-    assign uart_tx_data = ascii_table[uart_tx_byte[~uart_tx_off[-1]]];
+    assign uart_tx_off  = fsm_cnt[$clog2(BYTE_WIDTH)-1:0];
+    assign uart_tx_data = sram_b_rdata[uart_tx_off[$clog2(BYTE_WIDTH)-1:0]];
 
     // serializer
     tcb_dev_uart_ser #(
