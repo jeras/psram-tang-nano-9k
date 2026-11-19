@@ -23,6 +23,7 @@ module tang_nano_9k_flash_demo_tb #(
     logic       XTAL_IN;
     logic [2:1] S = 1'b1;
     wire  [6:1] LED;
+    wire        FPGA_RX;
     wire        FPGA_TX;
 
     localparam realtime XTAL_PERIOD = 1s / 27_000_000;
@@ -46,26 +47,31 @@ module tang_nano_9k_flash_demo_tb #(
         S[1] <= 1'b0;
         #20ms;
         S[1] <= 1'b1;
+        #20ms;
         
         // UART dump enable
         uart.start("", "uart_rx.txt");
   
-        // short "run" button press
-        repeat(8)  @(posedge XTAL_IN);
-        S[2] <= 1'b0;
-        repeat(4)  @(posedge XTAL_IN);
-        S[2] <= 1'b1;
+//        // short "run" button press
+//        repeat(8)  @(posedge XTAL_IN);
+//        S[2] <= 1'b0;
+//        repeat(4)  @(posedge XTAL_IN);
+//        S[2] <= 1'b1;
 
-        // short "run" button press
-        #20ms;
-        S[2] <= 1'b0;
-        #20ms;
-        S[2] <= 1'b1;
+//        // short "start" button press
+//        #20ms;
+//        S[2] <= 1'b0;
+//        #20ms;
+//        S[2] <= 1'b1;
+
+        // sent start request over UART
+        uart.tx("\n");
         
         // wait for LED to indicate the end of the test
-        @(negedge LED[3])
+        @(posedge LED[3])
         repeat(4)  @(posedge XTAL_IN);
         // end simulation
+        #10ms;
         $finish();
     end
 
@@ -93,11 +99,22 @@ module tang_nano_9k_flash_demo_tb #(
 
     // Flash array initialization
     initial begin
+        int flash_file;
+        int status;  // status[8-1:0] contains a character from the file
+        bit [4-1:0][8-1:0] data;
+        flash_file = $fopen("lorem_ipsum.txt", "rb");
         for (int unsigned x=0; x<304; x++) begin
             for (int unsigned y=0; y<64; y++) begin
-                demo.flash_ctrl.flash.MEM_DATA[x[9:0]][y[5:0]] = {x[15:0], y[15:0]};
+                // filling a word from the file (little endian)
+                for (int unsigned b=0; b<4; b++) begin
+                    status = $fgetc(flash_file);
+                    data[b] = status[8-1:0];
+                end
+                // writing the data word into Flash
+                demo.flash_ctrl.flash.MEM_DATA[x[9:0]][y[5:0]] = data;
             end
         end
+        $fclose(flash_file);
     end
 
     // test RTL instance
@@ -108,6 +125,7 @@ module tang_nano_9k_flash_demo_tb #(
         .XTAL_IN (XTAL_IN),
         .S       (S      ),
         .LED     (LED    ),
+        .FPGA_RX (FPGA_RX),
         .FPGA_TX (FPGA_TX)
     );
 
@@ -115,7 +133,7 @@ module tang_nano_9k_flash_demo_tb #(
     uart_model #(
         .BAUDRATE (BAUDRATE)
     ) uart (
-        .TXD (),
+        .TXD (FPGA_RX),
         .RXD (FPGA_TX)
     );
 

@@ -19,6 +19,7 @@ module tang_nano_9k_flash_demo #(
     input  logic       XTAL_IN,
     input  logic [2:1] S,
     output logic [6:1] LED,
+    input  wire        FPGA_RX,
     output wire        FPGA_TX
 );
 
@@ -27,6 +28,10 @@ module tang_nano_9k_flash_demo #(
     // data width (based on flash data bus width)
     localparam int unsigned DATA_WIDTH = 32;
     localparam int unsigned BYTE_WIDTH = DATA_WIDTH/8;
+
+    // UART baudrate calculations
+    localparam int unsigned BAUD_RATE = int'(FREQUENCY/real'(BAUDRATE));
+    localparam int unsigned BAUD_WIDTH = $clog2(BAUD_RATE);
 
     // test FSM
     localparam bit [2-1:0] FSM_READ = 2'b00;  // read flash into SRAM
@@ -69,16 +74,21 @@ module tang_nano_9k_flash_demo #(
     logic                           sram_b_enable;
     logic [DATA_WIDTH/8-1:0][8-1:0] sram_b_rdata;
 
+    // UART RX signals
+    logic                uart_rx_valid;
+    logic        [8-1:0] uart_rx_data ;
+    logic                uart_rx_ready;
+    logic                uart_rx_transfer;
+
     // UART TX signals
     logic                uart_tx_valid;
+    logic        [8-1:0] uart_tx_data ;
     logic                uart_tx_ready;
-
     logic                uart_tx_transfer;
 
     logic [$clog2(BYTE_WIDTH)-1:-1] uart_tx_off;  // nibble offset
 
     logic [2-1:0][4-1:0] uart_tx_byte;   // raw byte data
-    logic        [8-1:0] uart_tx_char;   // ASCII character for a hexadecimal value of a nibble
 
 ///////////////////////////////////////////////////////////////////////////////
 // system signals
@@ -108,7 +118,7 @@ module tang_nano_9k_flash_demo #(
     assign rst = ~btn[1];  // buttons are active low
 
     // start button
-    assign start_btn = ~btn[2];  // buttons are active low
+    assign start_btn = ~btn[2] | uart_rx_transfer;  // buttons are active low
 
     // start button register (delay)
     always_ff @(posedge clk, posedge rst)
@@ -121,7 +131,7 @@ module tang_nano_9k_flash_demo #(
     // LED-s
     assign LED[1] = ~rst;            // reset signal
     assign LED[2] = ~start;          // start button
-    assign LED[3] = ~uart_tx_valid;  // UART TX active
+    assign LED[3] = ~fsm_state[1];  // UART TX active
 
 ///////////////////////////////////////////////////////////////////////////////
 // test FSM
@@ -230,14 +240,43 @@ module tang_nano_9k_flash_demo #(
     end
 
 ///////////////////////////////////////////////////////////////////////////////
-// UART instance
+// UART RX instance
+///////////////////////////////////////////////////////////////////////////////
+
+    logic fpga_rx0;
+    logic fpga_rx1;
+
+    // UART RXD CDC (avoiding metastability issues)
+    always_ff @(posedge clk)
+    {fpga_rx1, fpga_rx0} <= {fpga_rx0, FPGA_RX};
+
+    // UART RX characters must always be accepted
+    assign uart_rx_ready = 1'b1;
+    assign uart_rx_transfer = uart_rx_valid & uart_rx_ready;
+
+    // deserializer
+    tcb_dev_uart_des #(
+        .BAUD_WIDTH (BAUD_WIDTH)
+    ) rx_des (
+        // system signals
+        .clk     (clk),
+        .rst     (rst),
+        // configuration
+        .cfg_bdr (BAUD_RATE[BAUD_WIDTH-1:0]-BAUD_WIDTH'(1)),
+        .cfg_smp (BAUD_RATE[BAUD_WIDTH-1:0]-BAUD_WIDTH'(1)),
+        // parallel stream
+        .str_vld (uart_rx_valid),
+        .str_dat (uart_rx_data ),
+        // serial RX input
+        .rxd     (fpga_rx1)
+    );
+
+///////////////////////////////////////////////////////////////////////////////
+// UART TX instance
 ///////////////////////////////////////////////////////////////////////////////
 
     // table containing ASCII values for each hexadecimal (nibble) value
     byte ascii_table [0:16-1] = '{"0", "1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"};
-
-    localparam int unsigned BAUD_RATE = int'(FREQUENCY/real'(BAUDRATE))-1;
-    localparam int unsigned BAUD_WIDTH = $clog2(BAUD_RATE);
 
     assign uart_tx_transfer = uart_tx_valid & uart_tx_ready;
 
@@ -253,19 +292,20 @@ module tang_nano_9k_flash_demo #(
     assign uart_tx_byte = sram_b_rdata[uart_tx_off[$clog2(BYTE_WIDTH)-1:0]];
 
     // convert a nibble into an ASCII character
-    assign uart_tx_char = ascii_table[uart_tx_byte[~uart_tx_off[-1]]];
+    assign uart_tx_data = ascii_table[uart_tx_byte[~uart_tx_off[-1]]];
 
-    uart_tx #(
+    // serializer
+    tcb_dev_uart_ser #(
         .BAUD_WIDTH (BAUD_WIDTH)
     ) uart (
         // system signals
         .clk     (clk),
         .rst     (rst),
         // configuration
-        .cfg_bdr (BAUD_RATE[BAUD_WIDTH-1:0]),
+        .cfg_bdr (BAUD_RATE[BAUD_WIDTH-1:0]-BAUD_WIDTH'(1)),
         // parallel stream
         .str_vld (uart_tx_valid),
-        .str_dat (uart_tx_char ),
+        .str_dat (uart_tx_data ),
         .str_rdy (uart_tx_ready),
         // serial TX output
         .txd     (FPGA_TX)
