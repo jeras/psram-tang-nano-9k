@@ -8,7 +8,8 @@
 
 module debounce #(
     // initial value, can be same or opposite (causing a power-up pulse) to button idle state
-    parameter bit      INIT = 1'b0,
+    parameter bit      INIT_CDC = 1'b0,
+    parameter bit      INIT_OUT = 1'b0,
     // timing parameters
     parameter  int unsigned CNT_LENGTH = 7,                  // counter length
     localparam int unsigned CNT_WIDTH = $clog2(CNT_LENGTH)   // counter width
@@ -24,9 +25,9 @@ module debounce #(
     logic                 cnt_end;    // counter end
 
     // data signals
-    logic d_0 = INIT;  // input CDC register 0
-    logic d_1 = INIT;  // input CDC register 1
-    logic d_r = INIT;  // output register
+    logic d_0 = INIT_CDC;  // input CDC register 0
+    logic d_1 = INIT_CDC;  // input CDC register 1
+    logic d_r = INIT_OUT;  // output register
     logic tgl;         // input toggle in relation to output
 
     // CDC to prevent metastability problems

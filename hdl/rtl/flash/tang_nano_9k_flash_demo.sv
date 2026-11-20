@@ -36,9 +36,9 @@ module tang_nano_9k_flash_demo #(
     localparam int unsigned BAUD_WIDTH = $clog2(BAUD_RATE);
 
     // test FSM
-    localparam bit [2-1:0] FSM_READ = 2'b00;  // read flash into SRAM
-    localparam bit [2-1:0] FSM_SEND = 2'b01;  // send data from SRAM to UART
-    localparam bit [2-1:0] FSM_IDLE = 2'b10;  // idle
+    localparam bit [2-1:0] FSM_IDLE = 2'b00;  // idle
+    localparam bit [2-1:0] FSM_READ = 2'b10;  // read flash into SRAM
+    localparam bit [2-1:0] FSM_SEND = 2'b11;  // send data from SRAM to UART
 
     // local system signals
     logic clk;
@@ -97,28 +97,33 @@ module tang_nano_9k_flash_demo #(
     // system clock
     assign clk = XTAL_IN;
 
-    // button debounce
-    generate
-    for (genvar i=1; i<=2; i++) begin: buttons
+    // button RESET debounce (INIT: detect a button press at power up)
+    debounce #(
+        .INIT_CDC   (1'b1),
+        .INIT_OUT   (1'b0),
+        .CNT_LENGTH (DEBOUNCE_LENGTH)
+    ) button1 (
+        .clk  (clk),
+        .d_i  (~S [1]),
+        .d_o  (btn[1])
+    );
 
-        debounce #(
-            .INIT       (1'b1),
-            // timing parameters
-            .CNT_LENGTH (DEBOUNCE_LENGTH)
-        ) button (
-            .clk  (clk),
-            .d_i  (S[i]),
-            .d_o  (btn[i])
-        );
-
-    end: buttons
-    endgenerate
+    // button RESET debounce
+    debounce #(
+        .INIT_CDC   (1'b1),
+        .INIT_OUT   (1'b0),
+        .CNT_LENGTH (DEBOUNCE_LENGTH)
+    ) button2 (
+        .clk  (clk),
+        .d_i  (~S [2]),
+        .d_o  (btn[2])
+    );
 
     // system reset
-    assign rst = ~btn[1];  // buttons are active low
+    assign rst = btn[1];  // buttons are active low
 
     // start button
-    assign start_btn = ~btn[2] | uart_rx_transfer;  // buttons are active low
+    assign start_btn = btn[2];  // buttons are active low
 
     // start button register (delay)
     always_ff @(posedge clk, posedge rst)
@@ -126,12 +131,14 @@ module tang_nano_9k_flash_demo #(
     else     start_reg <= start_btn;
 
     // start pulse
-    assign start = start_btn & ~start_reg;
+//    assign start = (start_btn & ~start_reg) | uart_rx_transfer;
+    assign start = uart_rx_transfer;
 
     // LED-s
     assign LED[1] = ~rst;            // reset signal
     assign LED[2] = ~start;          // start button
-    assign LED[3] = ~fsm_state[1];  // UART TX active
+    assign LED[5] = ~fsm_state[0];   // UART TX active
+    assign LED[6] =  fsm_state[1];   // FSM IDLE
 
 ///////////////////////////////////////////////////////////////////////////////
 // test FSM

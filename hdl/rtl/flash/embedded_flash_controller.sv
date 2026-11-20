@@ -58,7 +58,9 @@ module embedded_flash_controller #(
                 fsm_state <= FSM_SMPL;
             end
             FSM_SMPL: begin
-                fsm_state <= FSM_IDLE;
+                if (bus_req_valid)  fsm_state <= FSM_ADDR;
+                else                fsm_state <= FSM_IDLE;
+//                fsm_state <= FSM_IDLE;
             end
             default: begin end
         endcase
@@ -82,7 +84,8 @@ module embedded_flash_controller #(
     assign flash_ye = fsm_state[0];
     assign flash_se = fsm_state[1];
 
-    assign bus_req_ready = fsm_state[2];
+//    assign bus_req_ready = fsm_state[2];
+    assign bus_req_ready = fsm_state[1];
 
     // embedded flash interface instance
     FLASH608K flash (

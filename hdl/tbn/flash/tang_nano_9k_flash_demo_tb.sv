@@ -15,8 +15,8 @@ module tang_nano_9k_flash_demo_tb #(
 `else
     parameter  int unsigned TEST_SIZE = 304*64*4,
     // debounce counter length (frequency * time)
-    localparam int unsigned DEBOUNCE_LENGTH = 270000,  // 27MHz * 10ms
-//  localparam int unsigned DEBOUNCE_LENGTH = 27,  // debug option
+//    localparam int unsigned DEBOUNCE_LENGTH = 270000,  // 27MHz * 10ms
+    localparam int unsigned DEBOUNCE_LENGTH = 27,  // debug option
     // UART baudrate
 //  parameter  longint      BAUDRATE = 115_200
 //  parameter  longint      BAUDRATE = 230_400
@@ -25,7 +25,7 @@ module tang_nano_9k_flash_demo_tb #(
 );
 
     logic       XTAL_IN;
-    logic [2:1] S = 1'b1;
+    logic [2:1] S = 2'b11;
     wire  [6:1] LED;
     wire        FPGA_RX;
     wire        FPGA_TX;
@@ -33,19 +33,19 @@ module tang_nano_9k_flash_demo_tb #(
     localparam realtime XTAL_PERIOD = 1s / 27_000_000;
 
     // clock source
-    initial                  XTAL_IN = 1'b1;
+    initial                  XTAL_IN = 1'b0;
     always #(XTAL_PERIOD/2)  XTAL_IN = ~XTAL_IN;
 
     // button press
     initial begin
-        S <= 2'b11;
+        S = 2'b11;
 
         // short "reset" button press
-        repeat(2*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
+        repeat(3*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
         S[1] <= 1'b0;
-        repeat(2*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
+        repeat(3*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
         S[1] <= 1'b1;
-        repeat(1*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
+        repeat(3*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
 
         // UART dump enable
         uart.start("", "uart_rx.txt");
@@ -72,8 +72,8 @@ module tang_nano_9k_flash_demo_tb #(
 `ifdef DEBUG
         repeat(2000)  @(posedge XTAL_IN);
 `else
-//      #10ms;
-        #500ms;
+        #1ms;
+//        #500ms;
 `endif
         $finish();
     end
