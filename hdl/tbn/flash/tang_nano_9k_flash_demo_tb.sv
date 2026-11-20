@@ -16,10 +16,11 @@ module tang_nano_9k_flash_demo_tb #(
     parameter  int unsigned TEST_SIZE = 304*64*4,
     // debounce counter length (frequency * time)
     localparam int unsigned DEBOUNCE_LENGTH = 270000,  // 27MHz * 10ms
+//  localparam int unsigned DEBOUNCE_LENGTH = 27,  // debug option
     // UART baudrate
 //  parameter  longint      BAUDRATE = 115_200
 //  parameter  longint      BAUDRATE = 230_400
-    parameter  longint      BAUDRATE = 1_000_000
+    parameter  longint      BAUDRATE = 3_000_000
 `endif
 );
 
@@ -63,7 +64,7 @@ module tang_nano_9k_flash_demo_tb #(
         repeat(4)  @(posedge XTAL_IN);
         // end simulation
         #10ms;
-        $finish();
+//        $finish();
     end
 
     // simulation timeout for debugging purposes
@@ -71,7 +72,8 @@ module tang_nano_9k_flash_demo_tb #(
 `ifdef DEBUG
         repeat(2000)  @(posedge XTAL_IN);
 `else
-        #1000ms;
+//      #10ms;
+        #500ms;
 `endif
         $finish();
     end
