@@ -72,8 +72,8 @@ module tang_nano_9k_flash_demo_tb #(
 `ifdef DEBUG
         repeat(2000)  @(posedge XTAL_IN);
 `else
-        #1ms;
-//        #500ms;
+//        #1ms;
+        #500ms;
 `endif
         $finish();
     end

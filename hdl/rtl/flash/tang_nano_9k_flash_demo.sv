@@ -172,6 +172,7 @@ module tang_nano_9k_flash_demo #(
             default: begin
                 if (start) begin
                     fsm_state <= FSM_READ;
+                    fsm_cnt   <= 'd0;
                 end
             end
         endcase
