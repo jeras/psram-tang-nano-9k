@@ -14,6 +14,8 @@ module tang_nano_9k_flash_demo_tb #(
     parameter longint       BAUDRATE = 27_000_000/13
 `else
     parameter  int unsigned TEST_SIZE = 304*64*4,
+    // debounce counter length (frequency * time)
+    localparam int unsigned DEBOUNCE_LENGTH = 270000,  // 27MHz * 10ms
     // UART baudrate
 //  parameter  longint      BAUDRATE = 115_200
 //  parameter  longint      BAUDRATE = 230_400
@@ -36,38 +38,26 @@ module tang_nano_9k_flash_demo_tb #(
     // button press
     initial begin
         S <= 2'b11;
-  
-//        // short "reset" button press
-//        repeat(8)  @(posedge XTAL_IN);
-//        S[1] <= 1'b0;
-//        repeat(4)  @(posedge XTAL_IN);
-//        S[1] <= 1'b1;
 
         // short "reset" button press
-        #20ms;
+        repeat(2*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
         S[1] <= 1'b0;
-        #20ms;
+        repeat(2*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
         S[1] <= 1'b1;
-        #20ms;
-        
+        repeat(1*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
+
         // UART dump enable
         uart.start("", "uart_rx.txt");
-  
-//        // short "run" button press
-//        repeat(8)  @(posedge XTAL_IN);
-//        S[2] <= 1'b0;
-//        repeat(4)  @(posedge XTAL_IN);
-//        S[2] <= 1'b1;
-
-//        // short "start" button press
-//        #20ms;
-//        S[2] <= 1'b0;
-//        #20ms;
-//        S[2] <= 1'b1;
 
         // sent start request over UART
         uart.tx("\n");
-        
+
+//        // short "run" button press
+//        repeat(2*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
+//        S[2] <= 1'b0;
+//        repeat(2*DEBOUNCE_LENGTH)  @(posedge XTAL_IN);
+//        S[2] <= 1'b1;
+
         // wait for LED to indicate the end of the test
         @(posedge LED[3])
         repeat(4)  @(posedge XTAL_IN);
@@ -81,7 +71,7 @@ module tang_nano_9k_flash_demo_tb #(
 `ifdef DEBUG
         repeat(2000)  @(posedge XTAL_IN);
 `else
-        #2000ms;
+        #1000ms;
 `endif
         $finish();
     end
@@ -120,8 +110,9 @@ module tang_nano_9k_flash_demo_tb #(
 
     // test RTL instance
     tang_nano_9k_flash_demo #(
-        .TEST_SIZE (TEST_SIZE),
-        .BAUDRATE  (BAUDRATE)
+        .TEST_SIZE       (TEST_SIZE),
+        .BAUDRATE        (BAUDRATE),
+        .DEBOUNCE_LENGTH (DEBOUNCE_LENGTH)
     ) demo (
         .XTAL_IN (XTAL_IN),
         .S       (S      ),

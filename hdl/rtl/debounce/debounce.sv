@@ -18,9 +18,6 @@ module debounce #(
   output logic d_o   // debounce output
 );
 
-    // debug code
-    initial $display("CNT_LENGTH = %d", CNT_LENGTH);
-
     // counter signals
     logic [CNT_WIDTH-1:0] cnt = 'd0;  // counter (power-up initial value for FPGA)
     logic [CNT_WIDTH-0:0] cnt_nxt;    // counter next

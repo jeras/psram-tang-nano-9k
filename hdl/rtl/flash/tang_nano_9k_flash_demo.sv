@@ -15,7 +15,7 @@ module tang_nano_9k_flash_demo #(
     // oscillator frequency
     localparam real         FREQUENCY = 27_000_000,  // 27MHz
     // debounce counter length (frequency * time)
-    localparam int unsigned DEBOUNCE_LENGTH = 270000  // 27MHz * 10ms
+    parameter  int unsigned DEBOUNCE_LENGTH = 270000  // 27MHz * 10ms
 )(
     input  logic       XTAL_IN,
     input  logic [2:1] S,
