@@ -5,11 +5,12 @@
     <Version>5</Version>
     <Device name="GW1NR-9C" pn="GW1NR-LV9QN88PC6/I5">gw1nr9c-004</Device>
     <FileList>
-        <File path="../../hdl/rtl/debounce/debounce.sv" type="file.verilog" enable="1"/>
-        <File path="../../hdl/rtl/flash/embedded_flash_controller.sv" type="file.verilog" enable="1"/>
-        <File path="../../hdl/rtl/flash/tang_nano_9k_flash_demo.sv" type="file.verilog" enable="1"/>
-        <File path="../../TCB/hdl/rtl/dev/uart/tcb_dev_uart_ser.sv" type="file.verilog" enable="1"/>
-        <File path="../../TCB/hdl/rtl/dev/uart/tcb_dev_uart_des.sv" type="file.verilog" enable="1"/>
+        <File path="/home/izi/VLSI/psram-tang-nano-9k/TCB/hdl/rtl/dev/uart/tcb_dev_uart_des.sv" type="file.verilog" enable="1"/>
+        <File path="/home/izi/VLSI/psram-tang-nano-9k/TCB/hdl/rtl/dev/uart/tcb_dev_uart_ser.sv" type="file.verilog" enable="1"/>
+        <File path="/home/izi/VLSI/psram-tang-nano-9k/hdl/rtl/debounce/debounce.sv" type="file.verilog" enable="1"/>
+        <File path="/home/izi/VLSI/psram-tang-nano-9k/hdl/rtl/flash/embedded_flash_controller.sv" type="file.verilog" enable="1"/>
+        <File path="/home/izi/VLSI/psram-tang-nano-9k/hdl/rtl/flash/tang_nano_9k_flash_demo.sv" type="file.verilog" enable="1"/>
         <File path="tang_nano_9k_flash_demo.cts" type="file.cst" enable="1"/>
+        <File path="tang_nano_9k_flash_demo.sdc" type="file.sdc" enable="1"/>
     </FileList>
 </Project>
