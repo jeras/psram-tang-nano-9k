@@ -7,11 +7,15 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 module embedded_flash_controller #(
+    // flash size/width parameters
     parameter  int unsigned SIZE = 608_000 / 32,
     parameter  int unsigned DATA_WIDTH = 32,
     parameter  int unsigned XADR_WIDTH = 9,
     parameter  int unsigned YADR_WIDTH = 6,
-    parameter  int unsigned ADDR_WIDTH = XADR_WIDTH + YADR_WIDTH + $clog2(DATA_WIDTH/8)
+    parameter  int unsigned ADDR_WIDTH = XADR_WIDTH + YADR_WIDTH + $clog2(DATA_WIDTH/8),
+    // flash protocol parameters
+    parameter  int unsigned PROTOCOL_CYCLES = 4,
+    parameter  int unsigned READY_READ_DELAY = 1
 )(
     // system signals
     input  logic clk,
@@ -23,13 +27,9 @@ module embedded_flash_controller #(
     output logic [DATA_WIDTH-1:0] bus_rdt_data    // read data
 );
 
-    // FSM states encode signals {ready, SE, [X/Y]E}
-    localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
-    localparam bit [3-1:0] FSM_ADDR = 3'b001;  // drive address
-    localparam bit [3-1:0] FSM_SE   = 3'b011;  // SE active
-    localparam bit [3-1:0] FSM_SMPL = 3'b101;  // sample
-
-    logic [3-1:0] fsm_state;
+///////////////////////////////////////////////////////////////////////////////
+// embedded flash signals and instance
+///////////////////////////////////////////////////////////////////////////////
 
     // embedded flash controller interface signals
     logic [DATA_WIDTH-1:0] flash_dout;
@@ -42,50 +42,6 @@ module embedded_flash_controller #(
     logic                  flash_prog  = 1'b0;
     logic                  flash_erase = 1'b0;
     logic                  flash_nvstr = 1'b0;
-
-    always_ff @(posedge clk, posedge rst)
-    if (rst) begin
-        fsm_state <= FSM_IDLE;
-    end else begin
-        case (fsm_state)
-            FSM_IDLE: begin
-                if (bus_req_valid)  fsm_state <= FSM_ADDR;
-            end
-            FSM_ADDR: begin
-                fsm_state <= FSM_SE;
-            end
-            FSM_SE  : begin
-                fsm_state <= FSM_SMPL;
-            end
-            FSM_SMPL: begin
-                if (bus_req_valid)  fsm_state <= FSM_ADDR;
-                else                fsm_state <= FSM_IDLE;
-//                fsm_state <= FSM_IDLE;
-            end
-            default: begin end
-        endcase
-    end
-
-    // sample the request address
-    always_ff @(posedge clk)
-    if (bus_req_valid) begin
-        flash_xadr <= bus_req_addr[$clog2(DATA_WIDTH/8)+YADR_WIDTH+:XADR_WIDTH];
-        flash_yadr <= bus_req_addr[$clog2(DATA_WIDTH/8)           +:YADR_WIDTH];
-    end
-
-    // sample the response data
-    always_ff @(posedge clk)
-    if (bus_req_valid & bus_req_ready) begin
-        bus_rdt_data <= flash_dout;
-    end
-
-    // FSM states encode signals {ready, SE, [X/Y]E}
-    assign flash_xe = fsm_state[0];
-    assign flash_ye = fsm_state[0];
-    assign flash_se = fsm_state[1];
-
-//    assign bus_req_ready = fsm_state[2];
-    assign bus_req_ready = fsm_state[1];
 
     // embedded flash interface instance
     FLASH608K flash (
@@ -100,5 +56,176 @@ module embedded_flash_controller #(
         .DIN   (flash_din),
         .DOUT  (flash_dout)
     );
+
+///////////////////////////////////////////////////////////////////////////////
+// protocol FSM
+///////////////////////////////////////////////////////////////////////////////
+
+    // sample the request address
+    always_ff @(posedge clk)
+    if (bus_req_valid) begin
+        flash_xadr <= bus_req_addr[$clog2(DATA_WIDTH/8)+YADR_WIDTH+:XADR_WIDTH];
+        flash_yadr <= bus_req_addr[$clog2(DATA_WIDTH/8)           +:YADR_WIDTH];
+    end
+
+    generate
+    case (PROTOCOL_CYCLES)
+
+        // 4 clock period access protocol
+        4: begin
+
+            // FSM states encode signals {ready, SE, [X/Y]E}
+            localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
+            localparam bit [3-1:0] FSM_ADDR = 3'b001;  // drive address
+            localparam bit [3-1:0] FSM_SE   = 3'b011;  // SE active
+            localparam bit [3-1:0] FSM_SMPL = 3'b101;  // sample
+
+            logic [3-1:0] fsm_state;
+
+            always_ff @(posedge clk, posedge rst)
+            if (rst) begin
+                fsm_state <= FSM_IDLE;
+            end else begin
+                case (fsm_state)
+                    FSM_IDLE: begin
+                        if (bus_req_valid)  fsm_state <= FSM_ADDR;
+                    end
+                    FSM_ADDR: begin
+                        fsm_state <= FSM_SE;
+                    end
+                    FSM_SE  : begin
+                        fsm_state <= FSM_SMPL;
+                    end
+                    FSM_SMPL: begin
+                        fsm_state <= FSM_IDLE;
+                        // read data is sampled in this state
+                    end
+                    default: begin  end
+                endcase
+            end
+
+            // FSM states encode signals {ready, SE, [X/Y]E}
+            assign flash_xe = fsm_state[0];
+            assign flash_ye = fsm_state[0];
+            assign flash_se = fsm_state[1];
+
+            // READY is returned during the FSM_SMPL state
+            assign bus_req_ready = fsm_state[2];
+
+            // sample the response data
+            always_ff @(posedge clk)
+            if (bus_req_ready) begin
+                bus_rdt_data <= flash_dout;
+            end
+
+        end
+
+        // 3 clock period access protocol
+        3: begin
+
+            // FSM states encode signals {ready, SE, [X/Y]E}
+            localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
+            localparam bit [3-1:0] FSM_ADDR = 3'b001;  // drive address
+            localparam bit [3-1:0] FSM_SE   = 3'b011;  // SE active
+            localparam bit [3-1:0] FSM_SMPL = 3'b101;  // sample
+
+            logic [3-1:0] fsm_state;
+
+            always_ff @(posedge clk, posedge rst)
+            if (rst) begin
+                fsm_state <= FSM_IDLE;
+            end else begin
+                case (fsm_state)
+                    FSM_IDLE: begin
+                        if (bus_req_valid)  fsm_state <= FSM_ADDR;
+                    end
+                    FSM_ADDR: begin
+                        fsm_state <= FSM_SE;
+                    end
+                    FSM_SE  : begin
+                        fsm_state <= FSM_SMPL;
+                        // read data is sampled in this state
+                    end
+                    FSM_SMPL: begin
+                        // only enter the idle state if there are no pending requests
+                        if (bus_req_valid)  fsm_state <= FSM_ADDR;
+                        else                fsm_state <= FSM_IDLE;
+                    end
+                    default: begin end
+                endcase
+            end
+
+            // FSM states encode signals {ready, SE, [X/Y]E}
+            assign flash_xe = fsm_state[0];
+            assign flash_ye = fsm_state[0];
+            assign flash_se = fsm_state[1];
+
+            assign bus_req_ready = fsm_state[1];
+
+            // sample the response data
+            always_ff @(posedge clk)
+            if (bus_req_ready) begin
+                bus_rdt_data <= flash_dout;
+            end
+
+        end
+
+        // 2 clock period access protocol
+        2: begin
+
+            // FSM states encode signals {ready, SE, [X/Y]E}
+            localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
+            localparam bit [3-1:0] FSM_SE   = 3'b011;  // SE active
+            localparam bit [3-1:0] FSM_SMPL = 3'b101;  // sample
+
+            logic [3-1:0] fsm_state;
+
+            always_ff @(posedge clk, posedge rst)
+            if (rst) begin
+                fsm_state <= FSM_IDLE;
+            end else begin
+                case (fsm_state)
+                    FSM_IDLE: begin
+                        if (bus_req_valid)  fsm_state <= FSM_SE;
+                    end
+                    FSM_SE  : begin
+                        fsm_state <= FSM_SMPL;
+                        // read data is sampled in this state
+                    end
+                    FSM_SMPL: begin
+                        // only enter the idle state if there are no pending requests
+                        if (bus_req_valid)  fsm_state <= FSM_SE;
+                        else                fsm_state <= FSM_IDLE;
+                    end
+                    default: begin end
+                endcase
+            end
+
+            // FSM states encode signals {ready, SE, [X/Y]E}
+            assign flash_xe = fsm_state[0];
+            assign flash_ye = fsm_state[0];
+
+            LU4 #(
+                .INIT (16'b0000_0000_0000_0010)
+            ) delay_lut (
+                .F  (flash_se),
+                .I0 (fsm_state[1]),
+                .I1 (1'b0),
+                .I2 (1'b0),
+                .I3 (1'b0)
+            );
+
+            assign bus_req_ready = fsm_state[1];
+
+            // sample the response data
+            always_ff @(posedge clk)
+            if (bus_req_ready) begin
+                bus_rdt_data <= flash_dout;
+            end
+
+        end
+
+    endcase
+    endgenerate
 
 endmodule: embedded_flash_controller

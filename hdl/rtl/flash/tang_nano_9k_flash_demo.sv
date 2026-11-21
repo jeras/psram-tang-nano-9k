@@ -189,7 +189,9 @@ module tang_nano_9k_flash_demo #(
 
     assign flash_req_addr = fsm_cnt[ADDR_WIDTH-1:0];
 
-    embedded_flash_controller flash_ctrl (
+    embedded_flash_controller #(
+        .PROTOCOL_CYCLES (3)
+    ) flash_ctrl (
         // system signals
         .clk  (clk),
         .rst  (rst),
