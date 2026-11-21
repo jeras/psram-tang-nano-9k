@@ -205,7 +205,7 @@ module embedded_flash_controller #(
             assign flash_xe = fsm_state[0];
             assign flash_ye = fsm_state[0];
 
-            LU4 #(
+            LUT4 #(
                 .INIT (16'b0000_0000_0000_0010)
             ) delay_lut (
                 .F  (flash_se),
