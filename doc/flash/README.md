@@ -57,7 +57,7 @@ All timing requirements are fulfilled with one or more clock period states:
   address enable signals `XE`/`YE` become active.
   _Tas_ (time from address and `XE`/`YE` pos-edge to `SE` pose-edge) is just _0.1ns_,
   so a single clock period is always enough.
-* `DETECT`: the `SE` pulse must be at least `5ns` long,
+* `DETECT`: the `SE` pulse must be at least _5ns_ long,
   a single clock period is enough for up to a _200MHz_ clock speed.
 * `DATA`: state can be from 0 to many clock cycles depending on the clock frequency.
   The length of `DETECT`+`DATA` states must be at least _Tacc_ (access time).
