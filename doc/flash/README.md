@@ -178,7 +178,7 @@ Flash reads are 32bit wide back to back transfers (1k transfers per block).
 
 The default parameter setting is the 1 clock period protocol,
 for testing (simulating) other protocol configurations,
-change the [protocol cycle length at the controller instance]().
+change the [protocol cycle length at the controller instance](https://github.com/jeras/tangnano9k-SoC/blob/main/hdl/rtl/flash/tang_nano_9k_flash_demo.sv#L192).
 
 ### Simulating
 
