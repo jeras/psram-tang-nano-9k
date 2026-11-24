@@ -72,7 +72,7 @@ module embedded_flash_controller #(
     case (PROTOCOL_CYCLES)
 
         // 4 clock period access protocol
-        4: begin
+        4: begin: cyc4
 
             // FSM states encode signals {ready, SE, [X/Y]E}
             localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
@@ -118,10 +118,10 @@ module embedded_flash_controller #(
                 bus_rdt_data <= flash_dout;
             end
 
-        end
+        end: cyc4
 
         // 3 clock period access protocol
-        3: begin
+        3: begin: cyc3
 
             // FSM states encode signals {ready, SE, [X/Y]E}
             localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
@@ -168,10 +168,10 @@ module embedded_flash_controller #(
                 bus_rdt_data <= flash_dout;
             end
 
-        end
+        end: cyc3
 
         // 2 clock period access protocol
-        2: begin
+        2: begin: cyc2
 
             // FSM states encode signals {ready, SE, [X/Y]E}
             localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
@@ -223,7 +223,51 @@ module embedded_flash_controller #(
                 bus_rdt_data <= flash_dout;
             end
 
-        end
+        end: cyc2
+
+        // 1 clock period access protocol
+        1: begin: cyc1
+
+            logic flash_enable;
+            logic flash_toggle_posedge;
+            logic flash_toggle_negedge;
+
+            always_ff @(posedge clk, posedge rst)
+            if (rst) begin
+                flash_enable         = 1'b0;
+                flash_toggle_posedge = 1'b0;
+            end else begin
+                flash_enable         <= bus_req_valid;
+                flash_toggle_posedge <= bus_req_valid ^ flash_toggle_posedge;
+            end
+
+            // FSM states encode signals {ready, SE, [X/Y]E}
+            assign flash_xe = flash_enable;
+            assign flash_ye = flash_enable;
+
+            always_ff @(negedge clk, posedge rst)
+            if (rst) begin
+                flash_toggle_negedge <= 1'b0;
+            end else begin
+                flash_toggle_negedge <= flash_toggle_posedge;
+            end
+
+            LUT4 #(
+                .INIT (16'b0000_0000_0000_0110)
+            ) delay_lut (
+                .F  (flash_se),
+                .I0 (flash_toggle_posedge),
+                .I1 (flash_toggle_negedge),
+                .I2 (1'b0),
+                .I3 (1'b0)
+            );
+
+            assign bus_req_ready = 1'b1;
+
+            // combinational response data
+            assign bus_rdt_data = flash_dout;
+
+        end: cyc1
 
     endcase
     endgenerate

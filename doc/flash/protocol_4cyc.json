@@ -1,0 +1,23 @@
+{signal:
+  [
+    {name: 'clk'          , wave: 'P..........'},
+    {},
+    {name: 'req_valid'    , wave: '01...1...0.'},
+    {name: 'req_addr'     , wave: 'x=...=...x.', data: ['A0', 'A1']},
+    {name: 'req_ready'    , wave: '0...10..10.'},
+    {name: 'rsp_rdata_cmb', wave: 'x...=x..=x.', data: ['D0', 'D1']},
+    {name: 'rsp_rdata_reg', wave: 'x....=...=.', data: ['D0', 'D1']},
+    {},
+    {name: 'XADDR'        , wave: 'x.=...=....', data: ['A0(X)', 'A1(X)']},
+    {name: 'YADDR'        , wave: 'x.=...=....', data: ['A0(Y)', 'A1(Y)']},
+    {name: 'XE'           , wave: '0.1..01..0.'},
+    {name: 'YE'           , wave: '0.1..01..0.'},
+    {name: 'SE'           , wave: '0..10..10..'                    , node: '...A...E...'},
+    {name: 'DOUT'         , wave: 'x...=x..=x.', data: ['D0', 'D1'], node: '....B...F..'},
+    {},
+    {                                                                node: '...CD..GH..'},
+    {                                                                node: '.IJKLM.....'},
+  ],
+  config: {hscale: 2},
+  edge: ['A-C', 'B-D', 'C<->D 25ns', 'E-G', 'F-H', 'G<->H 25ns', 'I+J IDLE', 'J+K ADDR', 'K+L DETECT', 'L+M DATA'],
+}
