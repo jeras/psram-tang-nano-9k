@@ -146,6 +146,9 @@ Recommendations ...
 
 ## APPENDIX: Test demo
 
+The demo is designed for the **Tang Nano 9k** board
+(608kb or 76kB of Flash memory).
+
 A few notes on the RTL design:
 * The Flash control signals `[X/Y]E`, `SE` and `VALID`/`READY` are encoded into the FSM states themselves,
   since only 4 signals control the FSM, all can be implemented using only LUT4.
@@ -158,10 +161,35 @@ The controller and demo code can be found in:
 * RTL: `hdl/rtl/flash`,
 * testbench: `hdl/tbn/flash`.
 
+The system clock is _27MHz_ (directly from the `XTAL_IN` input).
+I did not test with other clock frequencies yet,
+a PLL could be added for further testing at a broader frequency range.
+
+A reset pulse is created at power-up using the button `S[1]` debouncer.
+
+A Flash readout sequence can be triggered by pressing `S[2]`,
+or by sending any character over USB UART.
+The readout sends out to USB UART (115200 baudrate).
+
+The readout is done by reading 4kB blocks (for a total of 19 blobks)
+of Flash contents into a SRAM buffer,
+then sending the data from the buffer to a host over USB UART.
+Flash reads are 32bit wide back to back transfers (1k transfers per block).
+
+The default parameter setting is the 1 clock period protocol,
+for testing (simulating) other protocol configurations,
+change the [protocol cycle length at the controller instance]().
+
 ### Simulating
 
-Enter the simulation folder:
+**WARNING:** Do not expect correct behavior from the official
+`FLASH608K` Flash model packed with Gowin IDE.
+The hardware test still works properly.
+
+Clone the projects and submodules and enter the simulation folder:
 ```sh
+git clone --recursive git@github.com:jeras/tangnano9k-SoC.git
+cd tangnano9k-SoC
 cd sim/flash
 ```
 
@@ -170,12 +198,17 @@ Creating a user Flash content file (a binary file, containing text):
 ./incrementing_lines.py
 ```
 
-Using _Icarus Verilog_ (testing using a Git HEAD build of Icarus Verilog):
+Simulate using _Icarus Verilog_ (testing using a Git HEAD build of Icarus Verilog):
 ```sh
 ./simulate-iverilog.sh
 ```
 
-Using _Questa_:
+To observe the FST waveforms using `surfer` do:
+```sh
+surfer tang_nano_9k_flash_demo_tb.fst
+```
+
+Simulate using _Questa_:
 ```sh
 ./simulate-questa.sh
 ```

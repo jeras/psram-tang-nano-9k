@@ -14,8 +14,8 @@ module embedded_flash_controller #(
     parameter  int unsigned YADR_WIDTH = 6,
     parameter  int unsigned ADDR_WIDTH = XADR_WIDTH + YADR_WIDTH + $clog2(DATA_WIDTH/8),
     // flash protocol parameters
-    parameter  int unsigned PROTOCOL_CYCLES = 4,
-    parameter  int unsigned READY_READ_DELAY = 1
+    parameter  int unsigned PROTOCOL_CYCLES   = 4,    // number of cycles (high clock rates are not supported yet)
+    parameter  int unsigned PROTOCOL_REGISTER = 1'b0  // read data register
 )(
     // system signals
     input  logic clk,
@@ -75,10 +75,10 @@ module embedded_flash_controller #(
         4: begin: cyc4
 
             // FSM states encode signals {ready, SE, [X/Y]E}
-            localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
-            localparam bit [3-1:0] FSM_ADDR = 3'b001;  // drive address
-            localparam bit [3-1:0] FSM_SE   = 3'b011;  // SE active
-            localparam bit [3-1:0] FSM_SMPL = 3'b101;  // sample
+            localparam bit [3-1:0] FSM_IDLE   = 3'b000;  // idle (XE/YE are not active)
+            localparam bit [3-1:0] FSM_ADDR   = 3'b001;  // drive address
+            localparam bit [3-1:0] FSM_DETECT = 3'b011;  // SE active
+            localparam bit [3-1:0] FSM_DATA   = 3'b101;  // data available
 
             logic [3-1:0] fsm_state;
 
@@ -91,12 +91,12 @@ module embedded_flash_controller #(
                         if (bus_req_valid)  fsm_state <= FSM_ADDR;
                     end
                     FSM_ADDR: begin
-                        fsm_state <= FSM_SE;
+                        fsm_state <= FSM_DETECT;
                     end
-                    FSM_SE  : begin
-                        fsm_state <= FSM_SMPL;
+                    FSM_DETECT: begin
+                        fsm_state <= FSM_DATA;
                     end
-                    FSM_SMPL: begin
+                    FSM_DATA: begin
                         fsm_state <= FSM_IDLE;
                         // read data is sampled in this state
                     end
@@ -109,7 +109,7 @@ module embedded_flash_controller #(
             assign flash_ye = fsm_state[0];
             assign flash_se = fsm_state[1];
 
-            // READY is returned during the FSM_SMPL state
+            // READY is returned during the FSM_DATA state
             assign bus_req_ready = fsm_state[2];
 
             // sample the response data
@@ -124,10 +124,10 @@ module embedded_flash_controller #(
         3: begin: cyc3
 
             // FSM states encode signals {ready, SE, [X/Y]E}
-            localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
-            localparam bit [3-1:0] FSM_ADDR = 3'b001;  // drive address
-            localparam bit [3-1:0] FSM_SE   = 3'b011;  // SE active
-            localparam bit [3-1:0] FSM_SMPL = 3'b101;  // sample
+            localparam bit [3-1:0] FSM_IDLE   = 3'b000;  // idle (XE/YE are not active)
+            localparam bit [3-1:0] FSM_ADDR   = 3'b001;  // drive address
+            localparam bit [3-1:0] FSM_DETECT = 3'b011;  // SE active
+            localparam bit [3-1:0] FSM_DATA   = 3'b101;  // data available
 
             logic [3-1:0] fsm_state;
 
@@ -140,13 +140,13 @@ module embedded_flash_controller #(
                         if (bus_req_valid)  fsm_state <= FSM_ADDR;
                     end
                     FSM_ADDR: begin
-                        fsm_state <= FSM_SE;
+                        fsm_state <= FSM_DETECT;
                     end
-                    FSM_SE  : begin
-                        fsm_state <= FSM_SMPL;
+                    FSM_DETECT: begin
+                        fsm_state <= FSM_DATA;
                         // read data is sampled in this state
                     end
-                    FSM_SMPL: begin
+                    FSM_DATA: begin
                         // only enter the idle state if there are no pending requests
                         if (bus_req_valid)  fsm_state <= FSM_ADDR;
                         else                fsm_state <= FSM_IDLE;
@@ -160,7 +160,7 @@ module embedded_flash_controller #(
             assign flash_ye = fsm_state[0];
             assign flash_se = fsm_state[1];
 
-            assign bus_req_ready = fsm_state[1];
+            assign bus_req_ready = fsm_state[2];
 
             // sample the response data
             always_ff @(posedge clk)
@@ -174,9 +174,9 @@ module embedded_flash_controller #(
         2: begin: cyc2
 
             // FSM states encode signals {ready, SE, [X/Y]E}
-            localparam bit [3-1:0] FSM_IDLE = 3'b000;  // idle (XE/YE are not active)
-            localparam bit [3-1:0] FSM_SE   = 3'b011;  // SE active
-            localparam bit [3-1:0] FSM_SMPL = 3'b101;  // sample
+            localparam bit [3-1:0] FSM_IDLE   = 3'b000;  // idle (XE/YE are not active)
+            localparam bit [3-1:0] FSM_DETECT = 3'b011;  // SE active
+            localparam bit [3-1:0] FSM_DATA   = 3'b101;  // data available
 
             logic [3-1:0] fsm_state;
 
@@ -186,15 +186,15 @@ module embedded_flash_controller #(
             end else begin
                 case (fsm_state)
                     FSM_IDLE: begin
-                        if (bus_req_valid)  fsm_state <= FSM_SE;
+                        if (bus_req_valid)  fsm_state <= FSM_DETECT;
                     end
-                    FSM_SE  : begin
-                        fsm_state <= FSM_SMPL;
+                    FSM_DETECT  : begin
+                        fsm_state <= FSM_DATA;
                         // read data is sampled in this state
                     end
-                    FSM_SMPL: begin
+                    FSM_DATA: begin
                         // only enter the idle state if there are no pending requests
-                        if (bus_req_valid)  fsm_state <= FSM_SE;
+                        if (bus_req_valid)  fsm_state <= FSM_DETECT;
                         else                fsm_state <= FSM_IDLE;
                     end
                     default: begin end
@@ -217,11 +217,20 @@ module embedded_flash_controller #(
 
             assign bus_req_ready = fsm_state[1];
 
-            // sample the response data
-            always_ff @(posedge clk)
-            if (bus_req_ready) begin
-                bus_rdt_data <= flash_dout;
-            end
+            // read response data
+            if (PROTOCOL_REGISTER) begin: registered
+
+                always_ff @(posedge clk)
+                if (bus_req_ready) begin
+                    bus_rdt_data <= flash_dout;
+                end
+
+            end: registered
+            else begin: combinational
+                
+                assign bus_rdt_data = flash_dout;
+
+            end: combinational
 
         end: cyc2
 
@@ -231,6 +240,7 @@ module embedded_flash_controller #(
             logic flash_enable;
             logic flash_toggle_posedge;
             logic flash_toggle_negedge;
+            logic flash_toggle;
 
             always_ff @(posedge clk, posedge rst)
             if (rst) begin
@@ -252,21 +262,37 @@ module embedded_flash_controller #(
                 flash_toggle_negedge <= flash_toggle_posedge;
             end
 
+            // SE is the XOR of posedge/negedge toggling signals
             LUT4 #(
                 .INIT (16'b0000_0000_0000_0110)
             ) delay_lut (
-                .F  (flash_se),
+                .F  (flash_toggle),
                 .I0 (flash_toggle_posedge),
                 .I1 (flash_toggle_negedge),
                 .I2 (1'b0),
                 .I3 (1'b0)
             );
 
+            // model LUT propagation delay for simulation
+            assign #1 flash_se = flash_toggle;
+
             assign bus_req_ready = 1'b1;
 
-            // combinational response data
-            assign bus_rdt_data = flash_dout;
+            // read response data
+            if (PROTOCOL_REGISTER) begin: registered
 
+                always_ff @(posedge clk)
+                if (bus_req_ready) begin
+                    bus_rdt_data <= flash_dout;
+                end
+
+            end: registered
+            else begin: combinational
+                
+                assign bus_rdt_data = flash_dout;
+
+            end: combinational
+            
         end: cyc1
 
     endcase

@@ -108,7 +108,7 @@ module tang_nano_9k_flash_demo #(
         .d_o  (btn[1])
     );
 
-    // button RESET debounce
+    // button START debounce
     debounce #(
         .INIT_CDC   (1'b1),
         .INIT_OUT   (1'b0),
@@ -131,8 +131,7 @@ module tang_nano_9k_flash_demo #(
     else     start_reg <= start_btn;
 
     // start pulse
-//    assign start = (start_btn & ~start_reg) | uart_rx_transfer;
-    assign start = uart_rx_transfer;
+    assign start = start_btn | uart_rx_transfer;
 
     // LED-s
     assign LED[1] = ~rst;            // reset signal
@@ -190,7 +189,8 @@ module tang_nano_9k_flash_demo #(
     assign flash_req_addr = fsm_cnt[ADDR_WIDTH-1:0];
 
     embedded_flash_controller #(
-        .PROTOCOL_CYCLES (1)
+        .PROTOCOL_CYCLES   (1),
+        .PROTOCOL_REGISTER (1'b0)
     ) flash_ctrl (
         // system signals
         .clk  (clk),

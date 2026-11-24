@@ -1,5 +1,4 @@
-
-## Tang Nano 9K SoC
+# Tang Nano 9K SoC
 
 The project was initially based on [PSRAM/HyperRAM controller for Tang Nano 9K](https://github.com/zf3/psram-tang-nano-9k).
 
@@ -8,12 +7,12 @@ Documentation:
 * [user Flash controller](doc/flash/README.md),
 * PSRAM/HyperRAM PHY, controller and cache,
 
-# Scratchpad
+## Scratchpad
 
 LVCMOS18D
 ELVDS_IOBUF
 
-# References
+## References
 
 [VexRiscv data cache](https://github.com/SpinalHDL/VexRiscv/blob/master/src/main/scala/vexriscv/plugin/DBusCachedPlugin.scala)
 
