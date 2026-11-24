@@ -1,6 +1,6 @@
 {signal:
   [
-    {name: 'clk'          , wave: 'HLHLHLHLHL.'},
+    {name: 'clk'          , wave: 'HLHLHLHLHLH'},
     {},
     {name: 'req_valid'    , wave: '0.1.1.0....'},
     {name: 'req_addr'     , wave: 'x.=.=.x....', data: ['A0', 'A1']},

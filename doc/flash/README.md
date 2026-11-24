@@ -89,7 +89,7 @@ I would need the full embedded flash documentation from the manufacturer (TSMC 5
 ### Removing the `SE` setup state
 
 Since the _Tas_ (time from address and `XE`/`YE` pos-edge to `SE` pose-edge) is just _0.1ns_,
-it can be implemented with some combinatorial logic delay (LUT4 in this design)
+it can be implemented with some combinatorial logic delay (`LUT4` in this design)
 instead of a full clock period. This saves another clock period
 not going toward the Flash access time.
 
@@ -98,7 +98,7 @@ there must be at least another state where `SE` is low.
 
 ![2 cycle protocol](protocol_2cyc.svg)
 
-**WARNING:** The propagation delay of a LUT4 (input I0) is about _250ps_,
+**WARNING:** The propagation delay of a `LUT4` (input I0) is about _250ps_,
 while interconnect delays can be larger (_500ps_).
 So the proper timing might depend on logic placement and routing.
 To reliably (repeatably) solve this issue, controller logic locations should be constrained.
@@ -110,19 +110,41 @@ The solution given here is to have a positive clocked `SEp` signal
 togling each system bus access cycle and a negatively clocked `SEn` signal
 following the positive one.
 The `SE` signal is obtaining by XOR-in the positive/negative signals.
-The XOR implementation with LUT4 provides enough propagation delay
+The XOR implementation with `LUT4` provides enough propagation delay
 to cover the _Tas_ requirement.
 
 This protocol configuration allows for a single clock cycle access to the Flash
 at up to 100MHz (`SE` high pulse must be at lest _5ns_ log).
-But since above `80MHz` the access time is already at 2 clock periods,
+But since above _40MHz_ the access time is already at 2 clock periods,
 the previous configuration makes more sense (it is simpler).
 
 ![1 cycle protocol](protocol_1cyc.svg)
 
-WARNING: the same warning about interconnect timing and 
+NOTE: With combinational logic the possibility of
+[glitches](https://en.wikipedia.org/wiki/Race_condition) should be considered.
+A glitch can occur when a signal is split,
+propagated through separate paths with different delays and later recombined.
+Based on my understanding of Gowin `LUT4` logic, glitches should not be a problem.
 
-## Test demo
+WARNING: the same warning about interconnect timing repeatability applies here.
+
+### Address prediction/prefetch
+
+In case of a registered read data configuration the read data
+is delayed 2 clock periods compared to the handshake,
+which is not ideal for a tightly coupled system bus.
+
+Since most access patterns are sequential,
+a controller can increment the request address and prefetch the next address.
+If the next system bus request address matches the prediction the response
+can take a single cycle, if the address does not match the prediction,
+the request takes another clock cycle.
+
+## Conclusions
+
+Recommendations ...
+
+## APPENDIX: Test demo
 
 A few notes on the RTL design:
 * The Flash control signals `[X/Y]E`, `SE` and `VALID`/`READY` are encoded into the FSM states themselves,
@@ -132,11 +154,75 @@ A few notes on the RTL design:
   I thought it would be easier writing a custom FSM for the demo,
   than finding a simple RISC-V CPU performing back to back reads each clock period.
 
+The controller and demo code can be found in:
+* RTL: `hdl/rtl/flash`,
+* testbench: `hdl/tbn/flash`.
+
 ### Simulating
+
+Enter the simulation folder:
+```sh
+cd sim/flash
+```
+
+Creating a user Flash content file (a binary file, containing text):
+```sh
+./incrementing_lines.py
+```
+
+Using _Icarus Verilog_ (testing using a Git HEAD build of Icarus Verilog):
+```sh
+./simulate-iverilog.sh
+```
+
+Using _Questa_:
+```sh
+./simulate-questa.sh
+```
 
 ### Synthesis
 
-### Running on FPGA hardware
+A Gowin IDE project can be found in the `fpga/flash` folder.
+
+### FPGA board programming
+
+Enter the simulation folder and generate the user Flash contents file:
+```sh
+cd sim/flash
+./incrementing_lines.py
+```
+
+Programming both the FPGA bitstream Flash and user Flash.
+```sh
+openFPGALoader -b tangnano9k -f ../../fpga/flash/impl/pnr/tang_nano_9k_flash_demo.fs --user-flash incrementing_lines.txt
+```
+
+Programming the FPGA bitstream into Flash, keeping the user Flash unchanged:
+```sh
+openFPGALoader -b tangnano9k -f ../../fpga/flash/impl/pnr/tang_nano_9k_flash_demo.fs
+```
+
+Programming the FPGA bitstream into SRAM, keeping the user Flash unchanged:
+```sh
+openFPGALoader -b tangnano9k -m ../../fpga/flash/impl/pnr/tang_nano_9k_flash_demo.fs
+```
+
+### Live hardware testing
+
+Read flash contents with a shell script (WARNING: it is not working):
+```sh
+./flash_readout.sh /dev/ttyUSB1 flash_contents.txt
+```
+
+Read flash contents with a Python script (with TTY device and output file as arguments):
+```sh
+./flash_readout.py /dev/ttyUSB1 flash_contents.txt
+```
+
+Check the user Flash contents:
+```sh
+diff flash_contents.txt incrementing_lines.txt
+```
 
 ## References
 
