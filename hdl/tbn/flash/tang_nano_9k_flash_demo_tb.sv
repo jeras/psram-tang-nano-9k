@@ -8,7 +8,7 @@
 
 `timescale 1ns/1ps
 
-module tang_nano_9k_flash_demo_tb #(
+module tangnano9k_flash_demo_tb #(
 `ifdef DEBUG
     parameter  int unsigned TEST_SIZE = 16,
     parameter longint       BAUDRATE = 27_000_000/13
@@ -81,11 +81,11 @@ module tang_nano_9k_flash_demo_tb #(
     // waveform dump
     initial begin
 `ifdef QUESTA
-        $dumpfile("tang_nano_9k_flash_demo_tb.vcd");
-        $dumpvars(0, tang_nano_9k_flash_demo_tb);
+        $dumpfile("tangnano9k_flash_demo_tb.vcd");
+        $dumpvars(0, tangnano9k_flash_demo_tb);
 `else
-        $dumpfile("tang_nano_9k_flash_demo_tb.fst");
-        $dumpvars(0, tang_nano_9k_flash_demo_tb);
+        $dumpfile("tangnano9k_flash_demo_tb.fst");
+        $dumpvars(0, tangnano9k_flash_demo_tb);
         for (int i=0; i<4; i++) $dumpvars(0, demo.sram_mem[i]);
 `endif
     end
@@ -111,7 +111,7 @@ module tang_nano_9k_flash_demo_tb #(
     end
 
     // test RTL instance
-    tang_nano_9k_flash_demo #(
+    tangnano9k_flash_demo #(
         .TEST_SIZE       (TEST_SIZE),
         .BAUDRATE        (BAUDRATE),
         .DEBOUNCE_LENGTH (DEBOUNCE_LENGTH)
@@ -131,4 +131,4 @@ module tang_nano_9k_flash_demo_tb #(
         .RXD (FPGA_TX)
     );
 
-endmodule: tang_nano_9k_flash_demo_tb
+endmodule: tangnano9k_flash_demo_tb

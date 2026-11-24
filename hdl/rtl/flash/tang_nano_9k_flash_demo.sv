@@ -6,7 +6,7 @@
 // Licensed under CERN-OHL-P v2 or later
 ///////////////////////////////////////////////////////////////////////////////
 
-module tang_nano_9k_flash_demo #(
+module tangnano9k_flash_demo #(
     // 4kB or 2*DPB (each DPB is 16kb organized as 2k 16-bit locations)
     parameter  int unsigned TEST_SIZE = 304*64*4,
     parameter  int unsigned SRAM_SIZE = 4*1024,
@@ -300,4 +300,4 @@ module tang_nano_9k_flash_demo #(
         .txd     (FPGA_TX)
     );
 
-endmodule: tang_nano_9k_flash_demo
+endmodule: tangnano9k_flash_demo

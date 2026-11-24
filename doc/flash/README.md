@@ -205,7 +205,7 @@ Simulate using _Icarus Verilog_ (testing using a Git HEAD build of Icarus Verilo
 
 To observe the FST waveforms using `surfer` do:
 ```sh
-surfer tang_nano_9k_flash_demo_tb.fst
+surfer tangnano9k_flash_demo_tb.fst
 ```
 
 Simulate using _Questa_:
@@ -227,17 +227,17 @@ cd sim/flash
 
 Programming both the FPGA bitstream Flash and user Flash.
 ```sh
-openFPGALoader -b tangnano9k -f ../../fpga/flash/impl/pnr/tang_nano_9k_flash_demo.fs --user-flash incrementing_lines.txt
+openFPGALoader -b tangnano9k -f ../../fpga/flash/impl/pnr/tangnano9k_flash_demo.fs --user-flash incrementing_lines.txt
 ```
 
 Programming the FPGA bitstream into Flash, keeping the user Flash unchanged:
 ```sh
-openFPGALoader -b tangnano9k -f ../../fpga/flash/impl/pnr/tang_nano_9k_flash_demo.fs
+openFPGALoader -b tangnano9k -f ../../fpga/flash/impl/pnr/tangnano9k_flash_demo.fs
 ```
 
 Programming the FPGA bitstream into SRAM, keeping the user Flash unchanged:
 ```sh
-openFPGALoader -b tangnano9k -m ../../fpga/flash/impl/pnr/tang_nano_9k_flash_demo.fs
+openFPGALoader -b tangnano9k -m ../../fpga/flash/impl/pnr/tangnano9k_flash_demo.fs
 ```
 
 ### Live hardware testing
