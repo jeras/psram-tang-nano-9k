@@ -436,7 +436,9 @@ Official vendor documentation:
 5. [SUG940 - Gowin Design Timing Constraints (User Guide)](https://www.gowinsemi.com/upload/database_doc/1875/document/6abd2bec0078c.pdf)
 6. [SUG1541 - Gowin Software Physical Constraints (User Guide)](https://www.gowinsemi.com/upload/database_doc/1872/document/6abd2c88904cc.pdf)
 
-7. [SUG550 - GowinSynthesis (User Guide)](https://www.gowinsemi.com/upload/database_doc/1878/document/6a34655863c9a.pdf)
+7. [SUG283 - Gowin Primitives (User Guide)](https://gowinsemi.com/upload/database_doc/1880/document/6abd2b61df545.pdf)
+8. [UG288 - Gowin Configurable Function Unit (CFU) (User Guide)](https://gowinsemi.com/upload/database_doc/1777/document/62e351486e153.pdf)
+8. [SUG550 - GowinSynthesis (User Guide)](https://www.gowinsemi.com/upload/database_doc/1878/document/6a34655863c9a.pdf)
 
 Open source Flash controller implementations:
 
