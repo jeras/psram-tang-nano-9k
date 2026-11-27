@@ -217,6 +217,8 @@ Simulate using _Questa_:
 
 A Gowin IDE project can be found in the `fpga/flash` folder.
 
+**WARNING:** I did not run synthesis with Yosys yet.
+
 ### FPGA board programming
 
 Enter the simulation folder and generate the user Flash contents file:
@@ -255,6 +257,170 @@ Read flash contents with a Python script (with TTY device and output file as arg
 Check the user Flash contents:
 ```sh
 diff flash_contents.txt incrementing_lines.txt
+```
+
+## APPENDIX: Placement
+
+NOTES:
+* With the current RTL, Gowin IDE combines the Flash `XE`/`YE` signal
+  with the BSRAM write enable signal and places it in the middle of the chip.
+  If I place the `XE`/`YE` DFF into the R2C2 corner where the Flash connections are,
+  I might have to explicitly allow for duplication of this DFF.
+
+```
+ipdb> db.extra_func[0, 0]['userflash']
+{
+    'type': 'FLASH608K',
+    'outs': {
+        'DOUT0': 'F1',
+        'DOUT1': 'F2',
+        'DOUT2': 'F3',
+        'DOUT3': 'F6',
+        'DOUT4': 'F7',
+        'DOUT5': 'OF0',
+        'DOUT6': 'OF1',
+        'DOUT7': 'OF2',
+        'DOUT8': 'OF3',
+        'DOUT9': 'OF4',
+        'DOUT10': 'OF5',
+        'DOUT11': 'OF6',
+        'DOUT12': 'OF7',
+        'DOUT13': 'USERFLASHDOUT13Q5',
+        'DOUT14': 'USERFLASHDOUT14Q6',
+        'DOUT15': 'USERFLASHDOUT15Q7',
+        'DOUT16': 'USERFLASHDOUT16F0',
+        'DOUT17': 'USERFLASHDOUT17F1',
+        'DOUT18': 'USERFLASHDOUT18F2',
+        'DOUT19': 'USERFLASHDOUT19F3',
+        'DOUT20': 'USERFLASHDOUT20F4',
+        'DOUT21': 'USERFLASHDOUT21F5',
+        'DOUT22': 'USERFLASHDOUT22F6',
+        'DOUT23': 'USERFLASHDOUT23F7',
+        'DOUT24': 'USERFLASHDOUT24Q0',
+        'DOUT25': 'USERFLASHDOUT25Q1',
+        'DOUT26': 'USERFLASHDOUT26Q2',
+        'DOUT27': 'USERFLASHDOUT27Q3',
+        'DOUT28': 'USERFLASHDOUT28Q4',
+        'DOUT29': 'USERFLASHDOUT29F7',
+        'DOUT30': 'USERFLASHDOUT30F5',
+        'DOUT31': 'USERFLASHDOUT31F4'
+    },
+    'ins': {
+        'DIN0': 'USERFLASHDIN0C0',
+        'DIN1': 'USERFLASHDIN1C1',
+        'DIN2': 'USERFLASHDIN2C2',
+        'DIN3': 'USERFLASHDIN3C3',
+        'DIN4': 'USERFLASHDIN4C4',
+        'DIN5': 'USERFLASHDIN5C5',
+        'DIN6': 'USERFLASHDIN6C6',
+        'DIN7': 'USERFLASHDIN7C7',
+        'DIN8': 'USERFLASHDIN8A6',
+        'DIN9': 'USERFLASHDIN9A7',
+        'DIN10': 'USERFLASHDIN10A5',
+        'DIN11': 'USERFLASHDIN11A4',
+        'DIN12': 'USERFLASHDIN12A3',
+        'DIN13': 'USERFLASHDIN13A2',
+        'DIN14': 'USERFLASHDIN14A1',
+        'DIN15': 'USERFLASHDIN15A0',
+        'DIN16': 'USERFLASHDIN16B7',
+        'DIN17': 'USERFLASHDIN17B6',
+        'DIN18': 'USERFLASHDIN18B5',
+        'DIN19': 'USERFLASHDIN19B4',
+        'DIN20': 'USERFLASHDIN20B3',
+        'DIN21': 'USERFLASHDIN21B2',
+        'DIN22': 'USERFLASHDIN22B1',
+        'DIN23': 'USERFLASHDIN23B0',
+        'DIN24': 'USERFLASHDIN24D7',
+        'DIN25': 'USERFLASHDIN25D6',
+        'DIN26': 'USERFLASHDIN26D5',
+        'DIN27': 'USERFLASHDIN27D4',
+        'DIN28': 'USERFLASHDIN28D3',
+        'DIN29': 'USERFLASHDIN29D2',
+        'DIN30': 'USERFLASHDIN30D1',
+        'DIN31': 'USERFLASHDIN31D0',
+        'XE': 'A1',
+        'YE': 'A2',
+        'SE': 'A0',
+        'PROG': 'A3',
+        'ERASE': 'C6',
+        'NVSTR': 'C7',
+        'XADR0': 'D5',
+        'XADR1': 'D4',
+        'XADR2': 'D3',
+        'XADR3': 'D2',
+        'XADR4': 'D1',
+        'XADR5': 'D0',
+        'XADR6': 'D6',
+        'XADR7': 'B1',
+        'XADR8': 'B0',
+        'YADR0': 'B7',
+        'YADR1': 'B6',
+        'YADR2': 'B5',
+        'YADR3': 'B4',
+        'YADR4': 'B3',
+        'YADR5': 'B2',
+        'INUSEN': 'C0'
+    }
+}
+```
+
+```
+ipdb> find_node_key('FLASH_OUT')
+* X0Y0/USERFLASHDOUT13Q5 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT13Q5'), (9, 46, 'Q5')})
+* X0Y0/USERFLASHDOUT14Q6 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT14Q6'), (9, 46, 'Q6')})
+* X0Y0/USERFLASHDOUT15Q7 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT15Q7'), (9, 46, 'Q7')})
+* X0Y0/USERFLASHDOUT16F0 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT16F0'), (9, 46, 'F0')})
+* X0Y0/USERFLASHDOUT17F1 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT17F1'), (9, 46, 'F1')})
+* X0Y0/USERFLASHDOUT18F2 ('FLASH_OUT', {(9, 46, 'F2'), (0, 0, 'USERFLASHDOUT18F2')})
+* X0Y0/USERFLASHDOUT19F3 ('FLASH_OUT', {(9, 46, 'F3'), (0, 0, 'USERFLASHDOUT19F3')})
+* X0Y0/USERFLASHDOUT20F4 ('FLASH_OUT', {(9, 46, 'F4'), (0, 0, 'USERFLASHDOUT20F4')})
+* X0Y0/USERFLASHDOUT21F5 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT21F5'), (9, 46, 'F5')})
+* X0Y0/USERFLASHDOUT22F6 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT22F6'), (9, 46, 'F6')})
+* X0Y0/USERFLASHDOUT23F7 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT23F7'), (9, 46, 'F7')})
+* X0Y0/USERFLASHDOUT24Q0 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT24Q0'), (9, 46, 'Q0')})
+* X0Y0/USERFLASHDOUT25Q1 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT25Q1'), (9, 46, 'Q1')})
+* X0Y0/USERFLASHDOUT26Q2 ('FLASH_OUT', {(9, 46, 'Q2'), (0, 0, 'USERFLASHDOUT26Q2')})
+* X0Y0/USERFLASHDOUT27Q3 ('FLASH_OUT', {(9, 46, 'Q3'), (0, 0, 'USERFLASHDOUT27Q3')})
+* X0Y0/USERFLASHDOUT28Q4 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT28Q4'), (9, 46, 'Q4')})
+* X0Y0/USERFLASHDOUT29F7 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT29F7'), (0, 46, 'F7')})
+* X0Y0/USERFLASHDOUT30F5 ('FLASH_OUT', {(0, 0, 'USERFLASHDOUT30F5'), (0, 46, 'F5')})
+* X0Y0/USERFLASHDOUT31F4 ('FLASH_OUT', {(0, 46, 'F4'), (0, 0, 'USERFLASHDOUT31F4')})
+```
+
+```
+ipdb> find_node_key('FLASH_IN')
+* X0Y0/USERFLASHDIN0C0 ('FLASH_IN', {(0, 0, 'USERFLASHDIN0C0'), (9, 46, 'C0')})
+* X0Y0/USERFLASHDIN1C1 ('FLASH_IN', {(0, 0, 'USERFLASHDIN1C1'), (9, 46, 'C1')})
+* X0Y0/USERFLASHDIN2C2 ('FLASH_IN', {(9, 46, 'C2'), (0, 0, 'USERFLASHDIN2C2')})
+* X0Y0/USERFLASHDIN3C3 ('FLASH_IN', {(9, 46, 'C3'), (0, 0, 'USERFLASHDIN3C3')})
+* X0Y0/USERFLASHDIN4C4 ('FLASH_IN', {(0, 0, 'USERFLASHDIN4C4'), (9, 46, 'C4')})
+* X0Y0/USERFLASHDIN5C5 ('FLASH_IN', {(0, 0, 'USERFLASHDIN5C5'), (9, 46, 'C5')})
+* X0Y0/USERFLASHDIN6C6 ('FLASH_IN', {(0, 0, 'USERFLASHDIN6C6'), (9, 46, 'C6')})
+* X0Y0/USERFLASHDIN7C7 ('FLASH_IN', {(0, 0, 'USERFLASHDIN7C7'), (9, 46, 'C7')})
+* X0Y0/USERFLASHDIN8A6 ('FLASH_IN', {(9, 46, 'A6'), (0, 0, 'USERFLASHDIN8A6')})
+* X0Y0/USERFLASHDIN9A7 ('FLASH_IN', {(9, 46, 'A7'), (0, 0, 'USERFLASHDIN9A7')})
+* X0Y0/USERFLASHDIN10A5 ('FLASH_IN', {(9, 46, 'A5'), (0, 0, 'USERFLASHDIN10A5')})
+* X0Y0/USERFLASHDIN11A4 ('FLASH_IN', {(0, 0, 'USERFLASHDIN11A4'), (9, 46, 'A4')})
+* X0Y0/USERFLASHDIN12A3 ('FLASH_IN', {(9, 46, 'A3'), (0, 0, 'USERFLASHDIN12A3')})
+* X0Y0/USERFLASHDIN13A2 ('FLASH_IN', {(0, 0, 'USERFLASHDIN13A2'), (9, 46, 'A2')})
+* X0Y0/USERFLASHDIN14A1 ('FLASH_IN', {(0, 0, 'USERFLASHDIN14A1'), (9, 46, 'A1')})
+* X0Y0/USERFLASHDIN15A0 ('FLASH_IN', {(9, 46, 'A0'), (0, 0, 'USERFLASHDIN15A0')})
+* X0Y0/USERFLASHDIN16B7 ('FLASH_IN', {(0, 0, 'USERFLASHDIN16B7'), (9, 46, 'B7')})
+* X0Y0/USERFLASHDIN17B6 ('FLASH_IN', {(0, 0, 'USERFLASHDIN17B6'), (9, 46, 'B6')})
+* X0Y0/USERFLASHDIN18B5 ('FLASH_IN', {(0, 0, 'USERFLASHDIN18B5'), (9, 46, 'B5')})
+* X0Y0/USERFLASHDIN19B4 ('FLASH_IN', {(9, 46, 'B4'), (0, 0, 'USERFLASHDIN19B4')})
+* X0Y0/USERFLASHDIN20B3 ('FLASH_IN', {(0, 0, 'USERFLASHDIN20B3'), (9, 46, 'B3')})
+* X0Y0/USERFLASHDIN21B2 ('FLASH_IN', {(9, 46, 'B2'), (0, 0, 'USERFLASHDIN21B2')})
+* X0Y0/USERFLASHDIN22B1 ('FLASH_IN', {(0, 0, 'USERFLASHDIN22B1'), (9, 46, 'B1')})
+* X0Y0/USERFLASHDIN23B0 ('FLASH_IN', {(9, 46, 'B0'), (0, 0, 'USERFLASHDIN23B0')})
+* X0Y0/USERFLASHDIN24D7 ('FLASH_IN', {(0, 0, 'USERFLASHDIN24D7'), (9, 46, 'D7')})
+* X0Y0/USERFLASHDIN25D6 ('FLASH_IN', {(9, 46, 'D6'), (0, 0, 'USERFLASHDIN25D6')})
+* X0Y0/USERFLASHDIN26D5 ('FLASH_IN', {(0, 0, 'USERFLASHDIN26D5'), (9, 46, 'D5')})
+* X0Y0/USERFLASHDIN27D4 ('FLASH_IN', {(0, 0, 'USERFLASHDIN27D4'), (9, 46, 'D4')})
+* X0Y0/USERFLASHDIN28D3 ('FLASH_IN', {(9, 46, 'D3'), (0, 0, 'USERFLASHDIN28D3')})
+* X0Y0/USERFLASHDIN29D2 ('FLASH_IN', {(0, 0, 'USERFLASHDIN29D2'), (9, 46, 'D2')})
+* X0Y0/USERFLASHDIN30D1 ('FLASH_IN', {(0, 0, 'USERFLASHDIN30D1'), (9, 46, 'D1')})
+* X0Y0/USERFLASHDIN31D0 ('FLASH_IN', {(9, 46, 'D0'), (0, 0, 'USERFLASHDIN31D0')})
 ```
 
 ## References

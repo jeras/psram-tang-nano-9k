@@ -44,6 +44,7 @@ module embedded_flash_controller #(
     logic                  flash_nvstr = 1'b0;
 
     // embedded flash interface instance
+    (* keep *)
     FLASH608K flash (
         .XADR  (flash_xadr),
         .YADR  (flash_yadr),
@@ -227,7 +228,7 @@ module embedded_flash_controller #(
 
             end: registered
             else begin: combinational
-                
+
                 assign bus_rdt_data = flash_dout;
 
             end: combinational
@@ -288,11 +289,11 @@ module embedded_flash_controller #(
 
             end: registered
             else begin: combinational
-                
+
                 assign bus_rdt_data = flash_dout;
 
             end: combinational
-            
+
         end: cyc1
 
     endcase
