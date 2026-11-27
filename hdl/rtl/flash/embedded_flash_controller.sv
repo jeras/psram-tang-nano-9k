@@ -28,6 +28,12 @@ module embedded_flash_controller #(
 );
 
 ///////////////////////////////////////////////////////////////////////////////
+// system bus logic
+///////////////////////////////////////////////////////////////////////////////
+
+    logic bus_req_transfer = bus_req_valid & bus_req_ready;
+
+///////////////////////////////////////////////////////////////////////////////
 // embedded flash signals and instance
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -59,15 +65,30 @@ module embedded_flash_controller #(
     );
 
 ///////////////////////////////////////////////////////////////////////////////
-// protocol FSM
+// address registers
 ///////////////////////////////////////////////////////////////////////////////
 
-    // sample the request address
-    always_ff @(posedge clk)
-    if (bus_req_valid) begin
-        flash_xadr <= bus_req_addr[$clog2(DATA_WIDTH/8)+YADR_WIDTH+:XADR_WIDTH];
-        flash_yadr <= bus_req_addr[$clog2(DATA_WIDTH/8)           +:YADR_WIDTH];
-    end
+    DFFE #(
+        .INIT (1'b0)
+    ) embedded_flash_controller_xadr [XADR_WIDTH-1:0] (
+        .D   (bus_req_addr[$clog2(DATA_WIDTH/8)+YADR_WIDTH+:XADR_WIDTH]),
+        .CLK (clk),
+        .CE  (bus_req_valid),
+        .Q   (flash_xadr)
+    );
+
+    DFFE #(
+        .INIT (1'b0)
+    ) embedded_flash_controller_yadr [YADR_WIDTH-1:0] (
+        .D   (bus_req_addr[$clog2(DATA_WIDTH/8)           +:YADR_WIDTH]),
+        .CLK (clk),
+        .CE  (bus_req_valid),
+        .Q   (flash_yadr)
+    );
+
+///////////////////////////////////////////////////////////////////////////////
+// protocol FSM
+///////////////////////////////////////////////////////////////////////////////
 
     generate
     case (PROTOCOL_CYCLES)
@@ -282,10 +303,14 @@ module embedded_flash_controller #(
             // read response data
             if (PROTOCOL_REGISTER) begin: registered
 
-                always_ff @(posedge clk)
-                if (bus_req_ready) begin
-                    bus_rdt_data <= flash_dout;
-                end
+                DFFE #(
+                    .INIT (1'b0)
+                ) embedded_flash_controller_dout [DATA_WIDTH-1:0] (
+                    .D   (flash_dout),
+                    .CLK (clk),
+                    .CE  (bus_req_transfer),
+                    .Q   (bus_rdt_data)
+                );
 
             end: registered
             else begin: combinational
