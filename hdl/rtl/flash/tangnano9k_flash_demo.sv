@@ -11,9 +11,9 @@ module tangnano9k_flash_demo #(
     parameter  int unsigned TEST_SIZE = 304*64*4,
     parameter  int unsigned SRAM_SIZE = 4*1024,
     // UART baudrate
-    parameter longint       BAUDRATE = 115_200,
+    parameter  longint      BAUDRATE = 115_200,
     // oscillator frequency
-    localparam real         FREQUENCY = 27_000_000,  // 27MHz
+    localparam longint      FREQUENCY = 27_000_000,  // 27MHz
     // debounce counter length (frequency * time)
     parameter  int unsigned DEBOUNCE_LENGTH = 270000  // 27MHz * 10ms
 )(
@@ -32,7 +32,7 @@ module tangnano9k_flash_demo #(
     localparam int unsigned BYTE_WIDTH = DATA_WIDTH/8;
 
     // UART baudrate calculations
-    localparam int unsigned BAUD_RATE = int'(FREQUENCY/real'(BAUDRATE));
+    localparam int unsigned BAUD_RATE  = FREQUENCY/BAUDRATE;
     localparam int unsigned BAUD_WIDTH = $clog2(BAUD_RATE);
 
     // test FSM
