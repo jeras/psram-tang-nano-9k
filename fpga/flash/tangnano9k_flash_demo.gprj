@@ -12,5 +12,6 @@
         <File path="../../hdl/rtl/flash/tangnano9k_flash_demo.sv" type="file.verilog" enable="1"/>
         <File path="tangnano9k_flash_demo.cst" type="file.cst" enable="1"/>
         <File path="tangnano9k_flash_demo.sdc" type="file.sdc" enable="1"/>
+        <File path="embedded_flash_controller.gsc" type="file.gsc" enable="1"/>
     </FileList>
 </Project>

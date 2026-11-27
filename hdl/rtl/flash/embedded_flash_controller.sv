@@ -34,11 +34,11 @@ module embedded_flash_controller #(
     // embedded flash controller interface signals
     logic [DATA_WIDTH-1:0] flash_dout;
     logic [DATA_WIDTH-1:0] flash_din;
-    logic [XADR_WIDTH-1:0] flash_xadr;
-    logic [YADR_WIDTH-1:0] flash_yadr;
-    logic                  flash_xe;
-    logic                  flash_ye;
-    logic                  flash_se;
+    logic [XADR_WIDTH-1:0] flash_xadr/*synthesis syn_preserve = 1*/;
+    logic [YADR_WIDTH-1:0] flash_yadr/*synthesis syn_preserve = 1*/;
+    logic                  flash_xe/*synthesis syn_preserve = 1*/;
+    logic                  flash_ye/*synthesis syn_preserve = 1*/;
+    logic                  flash_se/*synthesis syn_preserve = 1*/;
     logic                  flash_prog  = 1'b0;
     logic                  flash_erase = 1'b0;
     logic                  flash_nvstr = 1'b0;
