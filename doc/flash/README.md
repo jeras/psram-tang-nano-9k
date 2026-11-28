@@ -215,7 +215,7 @@ Simulate using _Questa_:
 
 ### Synthesis
 
-A Gowin IDE project can be found in the `fpga/flash` folder.
+A Gowin IDE project can be found in the `fpga/gowin_ide/flash` folder.
 
 **WARNING:** I did not run synthesis with Yosys yet.
 
@@ -229,17 +229,17 @@ cd sim/flash
 
 Programming both the FPGA bitstream Flash and user Flash.
 ```sh
-openFPGALoader -b tangnano9k -f ../../fpga/flash/impl/pnr/tangnano9k_flash_demo.fs --user-flash incrementing_lines.txt
+openFPGALoader -b tangnano9k -f ../../fpga/gowin_ide/flash/impl/pnr/tangnano9k_flash_demo.fs --user-flash incrementing_lines.txt
 ```
 
 Programming the FPGA bitstream into Flash, keeping the user Flash unchanged:
 ```sh
-openFPGALoader -b tangnano9k -f ../../fpga/flash/impl/pnr/tangnano9k_flash_demo.fs
+openFPGALoader -b tangnano9k -f ../../fpga/gowin_ide/flash/impl/pnr/tangnano9k_flash_demo.fs
 ```
 
 Programming the FPGA bitstream into SRAM, keeping the user Flash unchanged:
 ```sh
-openFPGALoader -b tangnano9k -m ../../fpga/flash/impl/pnr/tangnano9k_flash_demo.fs
+openFPGALoader -b tangnano9k -m ../../fpga/gowin_ide/flash/impl/pnr/tangnano9k_flash_demo.fs
 ```
 
 ### Live hardware testing
