@@ -229,7 +229,7 @@ module embedded_flash_controller #(
 
             LUT4 #(
                 .INIT (16'b0000_0000_0000_0010)
-            ) delay_lut (
+            ) embedded_flash_controller_delay_lut (
                 .F  (flash_se),
                 .I0 (fsm_state[1]),
                 .I1 (1'b0),
@@ -264,30 +264,44 @@ module embedded_flash_controller #(
             logic flash_toggle_negedge;
             logic flash_toggle;
 
-            always_ff @(posedge clk, posedge rst)
-            if (rst) begin
-                flash_enable         = 1'b0;
-                flash_toggle_posedge = 1'b0;
-            end else begin
-                flash_enable         <= bus_req_valid;
-                flash_toggle_posedge <= bus_req_valid ^ flash_toggle_posedge;
-            end
+            // flash address enable
+            DFFR #(
+                .INIT (1'b0)
+            ) embedded_flash_controller_enable (
+                .D     (bus_req_valid),
+                .CLK   (clk),
+                .RESET (rst),
+                .Q     (flash_enable)
+            );
 
-            // FSM states encode signals {ready, SE, [X/Y]E}
+            // both XE/YE are driven by flash_enable
             assign flash_xe = flash_enable;
             assign flash_ye = flash_enable;
 
-            always_ff @(negedge clk, posedge rst)
-            if (rst) begin
-                flash_toggle_negedge <= 1'b0;
-            end else begin
-                flash_toggle_negedge <= flash_toggle_posedge;
-            end
+            // flash detect toggling on rising clock edge
+            DFFR #(
+                .INIT (1'b0)
+            ) embedded_flash_controller_toggle_posedge (
+                .D     (bus_req_valid ^ flash_toggle_posedge),
+                .CLK   (clk),
+                .RESET (rst),
+                .Q     (flash_toggle_posedge)
+            );
+
+            // negedge clocked follower of flash_toggle_posedge
+            DFFNR #(
+                .INIT (1'b0)
+            ) embedded_flash_controller_toggle_negedge (
+                .D     (flash_toggle_posedge),
+                .CLK   (clk),
+                .RESET (rst),
+                .Q     (flash_toggle_negedge)
+            );
 
             // SE is the XOR of posedge/negedge toggling signals
             LUT4 #(
                 .INIT (16'b0000_0000_0000_0110)
-            ) delay_lut (
+            ) embedded_flash_controller_delay_lut (
                 .F  (flash_toggle),
                 .I0 (flash_toggle_posedge),
                 .I1 (flash_toggle_negedge),
@@ -298,6 +312,7 @@ module embedded_flash_controller #(
             // model LUT propagation delay for simulation
             assign #1 flash_se = flash_toggle;
 
+            // single clock period protocol is always ready
             assign bus_req_ready = 1'b1;
 
             // read response data
